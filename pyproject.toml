@@ -1,0 +1,7 @@
+[project]
+name = "Linique Robot Operations"
+version = "0.1.0"
+description = "Training Data Collection and Robot Operations Libraries"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
