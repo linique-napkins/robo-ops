@@ -1,0 +1,15 @@
+[leader.right]
+port = "/dev/tty.usbmodem5AB90657441"
+id = "leader_right"
+
+[leader.left]
+port = ""
+id = "leader_left"
+
+[follower.right]
+port = "/dev/tty.usbmodem5AB90652661"
+id = "follower_right"
+
+[follower.left]
+port = ""
+id = "follower_left"
