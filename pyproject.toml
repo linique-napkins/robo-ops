@@ -1,7 +1,13 @@
 [project]
-name = "Linique Robot Operations"
+name = "Linique-Robot-Operations"
 version = "0.1.0"
 description = "Training Data Collection and Robot Operations Libraries"
 readme = "README.md"
-requires-python = ">=3.14"
-dependencies = []
+requires-python = ">=3.13"
+dependencies = [
+    "lerobot[feetech]==0.4.2",
+    "wandb>=0.21.4",
+]
+
+[project.scripts]
+train = ""
