@@ -57,5 +57,5 @@ Repeat as necessary for all 4 arms
 Set the arms you want to control in `teleop.py` then run:
 
 ```bash
-uv run utils/teleop.py
+uv run utils/leader-teleop.py
 ```
