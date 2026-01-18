@@ -59,3 +59,9 @@ Set the arms you want to control in `teleop.py` then run:
 ```bash
 uv run utils/leader-teleop.py
 ```
+
+## Documentation:
+
+- [Adapter Board](https://wiki.seeedstudio.com/xiao_bus_servo_adapter/)
+- [HF SO-101](https://huggingface.co/docs/lerobot/so101)
+- [Seeed Studio Wiki](https://wiki.seeedstudio.com/lerobot_so100m_new/)
