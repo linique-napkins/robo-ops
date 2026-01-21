@@ -20,7 +20,7 @@ Install repo into a directory on your laptop.
 
 There are two ways to do this. I prefer the first since I know it better, but both work:
 
-# Install with SSH
+### Install with SSH
 
 To do this we will use SSH. Install ssh keys with [this guide](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent). Then [add it](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account).
 
@@ -32,7 +32,7 @@ git clone git@github.com:linique-napkins/robo-ops.git
 cd robo-ops
 ```
 
-# Install with GH CLI 
+### Install with GH CLI 
 
 To do this we will use the GitHub CLI. Install it here: https://cli.github.com/
 
