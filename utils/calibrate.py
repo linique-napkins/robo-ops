@@ -44,7 +44,9 @@ def get_role_choice() -> str:
 
 
 @app.command()
-def main():
+def main(
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing calibration"),
+):
     """Calibrate a robot arm."""
     config = load_config()
 
@@ -79,6 +81,10 @@ def main():
 
     typer.echo("\nConnecting to arm...")
     arm_obj.connect(calibrate=False)
+
+    if force:
+        typer.echo("Force flag set - overwriting existing calibration...")
+        arm_obj.calibration = {}
 
     typer.echo("Running calibration...")
     arm_obj.calibrate()

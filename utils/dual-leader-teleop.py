@@ -60,15 +60,15 @@ right_robot = SO101Follower(right_robot_config)
 left_teleop = SO101Leader(left_teleop_config)
 right_teleop = SO101Leader(right_teleop_config)
 
-# Connect all devices
+# Connect all devices (skip calibration check - assumes already calibrated)
 print("Connecting left leader...")
-left_teleop.connect()
+left_teleop.connect(calibrate=False)
 print("Connecting right leader...")
-right_teleop.connect()
+right_teleop.connect(calibrate=False)
 print("Connecting left follower...")
-left_robot.connect()
+left_robot.connect(calibrate=False)
 print("Connecting right follower...")
-right_robot.connect()
+right_robot.connect(calibrate=False)
 print("All devices connected!\n")
 
 
