@@ -2,6 +2,7 @@
 Configuration loading and validation utilities.
 """
 
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -73,3 +74,57 @@ def dataset_exists_on_hub(repo_id: str) -> bool:
 def get_local_dataset_path(repo_id: str) -> Path:
     """Get the local cache path for a dataset."""
     return HF_LEROBOT_HOME / repo_id
+
+
+def get_git_info() -> dict:
+    """Get git repository information for reproducibility.
+
+    Returns:
+        Dictionary with git hash, branch, and dirty status.
+        Returns empty values if not in a git repo.
+    """
+    try:
+        # Get current commit hash
+        git_hash = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=ROOT_DIR,
+        ).stdout.strip()
+
+        # Get short hash
+        git_hash_short = git_hash[:8]
+
+        # Get current branch
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=ROOT_DIR,
+        ).stdout.strip()
+
+        # Check if working directory is dirty
+        dirty_check = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=ROOT_DIR,
+        )
+        is_dirty = len(dirty_check.stdout.strip()) > 0
+
+        return {
+            "git_hash": git_hash,
+            "git_hash_short": git_hash_short,
+            "git_branch": branch,
+            "git_dirty": is_dirty,
+        }
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return {
+            "git_hash": "",
+            "git_hash_short": "",
+            "git_branch": "",
+            "git_dirty": False,
+        }
