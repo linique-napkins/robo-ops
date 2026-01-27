@@ -1,0 +1,20 @@
+# Inference Configuration
+
+[inference]
+# Trained policy to load (HuggingFace repo ID)
+policy_repo_id = "jhimmens/linique-act"
+
+# Dataset used for training (needed for feature definitions)
+dataset_repo_id = "jhimmens/linique"
+
+# Task description (should match training)
+task = "folding"
+
+# Device (cuda, mps, cpu)
+device = "mps"
+
+# Control frequency
+fps = 30
+
+# Visualization
+display = true

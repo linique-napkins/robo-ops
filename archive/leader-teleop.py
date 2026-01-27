@@ -1,10 +1,10 @@
 import tomllib
 from pathlib import Path
 
-from lerobot.robots.so101_follower import SO101Follower
-from lerobot.robots.so101_follower import SO101FollowerConfig
-from lerobot.teleoperators.so101_leader import SO101Leader
-from lerobot.teleoperators.so101_leader import SO101LeaderConfig
+from lerobot.robots.so_follower import SO101Follower
+from lerobot.robots.so_follower import SO101FollowerConfig
+from lerobot.teleoperators.so_leader import SO101Leader
+from lerobot.teleoperators.so_leader import SO101LeaderConfig
 
 # Config: which arm to use ("left" or "right")
 ARM = "right"

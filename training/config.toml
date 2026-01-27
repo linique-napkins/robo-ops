@@ -1,0 +1,33 @@
+# Training Configuration
+
+[training]
+# Dataset to train on (HuggingFace repo ID)
+dataset_repo_id = "jhimmens/linique"
+
+# Where to push the trained model (HuggingFace repo ID)
+output_repo_id = "jhimmens/linique-act"
+
+# Policy type
+policy = "act"
+
+# Training hyperparameters
+steps = 100000
+batch_size = 32
+learning_rate = 1e-5
+
+# Device (cuda, mps, cpu)
+device = "mps"
+
+# ACT-specific settings
+chunk_size = 100       # Number of future actions to predict
+dim_model = 512        # Transformer hidden dimension
+n_heads = 8            # Number of attention heads
+n_encoder_layers = 4   # Number of transformer encoder layers
+
+# Checkpointing
+save_freq = 10000      # Save checkpoint every N steps
+log_freq = 100         # Log metrics every N steps
+
+# Weights & Biases
+wandb_project = "linique-robot"
+# wandb_entity = "your-team"  # Optional: W&B team/entity name

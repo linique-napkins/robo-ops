@@ -1,20 +1,24 @@
-import tomllib
+"""
+Motor setup utility for SO101 robot arms.
+
+Usage:
+    uv run setup/motor_setup.py
+"""
+
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import typer
-from lerobot.robots.so101_follower import SO101Follower
-from lerobot.robots.so101_follower import SO101FollowerConfig
-from lerobot.teleoperators.so101_leader import SO101Leader
-from lerobot.teleoperators.so101_leader import SO101LeaderConfig
+from lerobot.robots.so_follower import SO101Follower
+from lerobot.robots.so_follower import SO101FollowerConfig
+from lerobot.teleoperators.so_leader import SO101Leader
+from lerobot.teleoperators.so_leader import SO101LeaderConfig
+
+from lib.config import load_config
 
 app = typer.Typer()
-
-CONFIG_PATH = Path(__file__).parent.parent / "ports.toml"
-
-
-def load_config() -> dict:
-    with CONFIG_PATH.open("rb") as f:
-        return tomllib.load(f)
 
 
 def get_arm_choice() -> str:
@@ -59,7 +63,7 @@ def main():
 
     if not port:
         typer.echo(f"\nError: No port configured for {arm} {role}.")
-        typer.echo("Please update ports.toml with the correct port.")
+        typer.echo("Please update config.toml with the correct port.")
         raise typer.Exit(1)
 
     typer.echo(f"\nSetting up {arm} {role} arm...")

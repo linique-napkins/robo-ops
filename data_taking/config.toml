@@ -1,0 +1,14 @@
+# Data Taking Configuration
+# Settings specific to data collection
+
+[recording]
+# Hugging Face dataset repository ID
+repo_id = "jhimmens/linique"
+# Task description for the recording
+task = "folding"
+# Number of episodes to record
+num_episodes = 50
+# Duration of each episode in seconds
+episode_time = 60
+# Time allowed for environment reset between episodes
+reset_time = 10

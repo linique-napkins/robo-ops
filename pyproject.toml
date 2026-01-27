@@ -5,15 +5,18 @@ description = "Training Data Collection and Robot Operations Libraries"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "lerobot[feetech,phone]==0.4.2",
+    "lerobot[feetech,phone]",
     "wandb>=0.21.4",
     "typer>=0.15.0",
     "opencv-python>=4.10.0",
     "numpy>=2.0.0",
 ]
 
-[project.scripts]
-train = ""
+[tool.uv.sources]
+lerobot = { path = "lerobot", editable = true }
+
+# Scripts are run directly with `uv run <path>` rather than installed commands
+# e.g., `uv run training/train.py` or `uv run inference/run.py`
 
 [dependency-groups]
 dev = [

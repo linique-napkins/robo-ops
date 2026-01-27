@@ -1,0 +1,28 @@
+# Global configuration for robot hardware
+# Copy this file to config.toml and update with your device paths
+#
+# Find ports with: uv run lerobot-find-port
+
+[leader.right]
+port = "/dev/tty.usbmodemXXXXX"  # Update with your port
+id = "leader_right"
+
+[leader.left]
+port = "/dev/tty.usbmodemXXXXX"  # Update with your port
+id = "leader_left"
+
+[follower.right]
+port = "/dev/tty.usbmodemXXXXX"  # Update with your port
+id = "follower_right"
+
+[follower.left]
+port = "/dev/tty.usbmodemXXXXX"  # Update with your port
+id = "follower_left"
+
+[camera]
+# macOS: use index (0, 1, 2...)
+# Linux: use path like "/dev/v4l/by-id/usb-XXX-video-index0" for stability
+path = 0
+width = 640
+height = 480
+fps = 30

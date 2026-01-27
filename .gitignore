@@ -12,5 +12,8 @@ wheels/
 
 .idea
 
-# so that ports dont get commited
-ports.toml
+# Hardware config with machine-specific ports (use config.toml.example as template)
+/config.toml
+
+# Training outputs
+outputs/
