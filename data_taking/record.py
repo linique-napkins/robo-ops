@@ -36,6 +36,7 @@ from lerobot.utils.visualization_utils import init_rerun
 
 from lib.config import dataset_exists_on_hub
 from lib.config import get_camera_config
+from lib.config import get_git_info
 from lib.config import get_local_dataset_path
 from lib.config import get_recording_config
 from lib.config import load_config
@@ -108,7 +109,7 @@ def create_or_resume_dataset(
 
 
 @app.command()
-def main(
+def main(  # noqa: PLR0912
     push_to_hub: bool = typer.Option(
         True,
         "--push/--no-push",
@@ -153,6 +154,14 @@ def main(
     reset_time = recording_cfg["reset_time"]
 
     print_config(config, recording_cfg)
+
+    # Get git info for reproducibility
+    git_info = get_git_info()
+    if git_info["git_hash"]:
+        dirty_marker = " (dirty)" if git_info["git_dirty"] else ""
+        typer.echo(f"\nGit: {git_info['git_hash_short']} on {git_info['git_branch']}{dirty_marker}")
+        if git_info["git_dirty"]:
+            typer.echo("  Warning: Working directory has uncommitted changes!")
 
     if not typer.confirm("\nProceed with recording?"):
         typer.echo("Recording cancelled.")
@@ -222,6 +231,13 @@ def main(
     try:
         # Create or load dataset
         dataset = create_or_resume_dataset(resume, repo_id, fps, robot, dataset_features)
+
+        # Add git info to dataset metadata for reproducibility
+        if git_info["git_hash"]:
+            dataset.meta.info["git_hash"] = git_info["git_hash"]
+            dataset.meta.info["git_branch"] = git_info["git_branch"]
+            dataset.meta.info["git_dirty"] = git_info["git_dirty"]
+            typer.echo(f"Logged git hash: {git_info['git_hash_short']}")
 
         # Connect hardware
         typer.echo("Connecting robot...")
