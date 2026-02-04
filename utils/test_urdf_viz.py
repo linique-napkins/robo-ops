@@ -100,7 +100,7 @@ def main() -> None:
                     observation[f"right_{joint}.pos"] = value
 
             # Log to Rerun
-            rr.set_time_seconds("time", t)
+            rr.set_time("time", timestamp=t)
             visualizer.log_robot_state(observation, use_degrees=True)
 
             # Also log joint values as scalars for debugging
