@@ -30,11 +30,12 @@ from lib.urdf_viz import save_rrd
 
 # Joint display order (short names without arm prefix)
 JOINT_ORDER = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+NUM_JOINT_LINES = len(JOINT_ORDER)  # Lines to move cursor up (just the joint rows)
 
 
 def move_cursor_up(lines: int) -> None:
     """Move the cursor up by a specified number of lines."""
-    print(f"\033[{lines}A", end="")
+    print(f"\033[{lines}A", end="", flush=True)
 
 
 def print_table_header() -> None:
@@ -46,18 +47,8 @@ def print_table_header() -> None:
     print("-" * 70)
 
 
-def print_positions(leader_pos: dict, follower_pos: dict, first_print: bool = False) -> int:
-    """Print a table of leader and follower positions using cursor repositioning.
-
-    Returns the number of lines printed (for cursor repositioning).
-    """
-    lines_printed = 0
-
-    if first_print:
-        print_table_header()
-        lines_printed += 5
-
-    # Print each joint row
+def print_positions(leader_pos: dict, follower_pos: dict) -> None:
+    """Print the joint position rows (overwrites previous values in place)."""
     for joint in JOINT_ORDER:
         left_key = f"left_{joint}.pos"
         right_key = f"right_{joint}.pos"
@@ -67,16 +58,11 @@ def print_positions(leader_pos: dict, follower_pos: dict, first_print: bool = Fa
         right_leader = leader_pos.get(right_key, 0.0)
         right_follower = follower_pos.get(right_key, 0.0)
 
+        # Use \033[K to clear to end of line (removes any stale characters)
         print(
             f"{joint:<20} | {left_leader:>10.2f} {left_follower:>10.2f} "
-            f"| {right_leader:>10.2f} {right_follower:>10.2f}"
+            f"| {right_leader:>10.2f} {right_follower:>10.2f}\033[K"
         )
-        lines_printed += 1
-
-    print("-" * 70)
-    lines_printed += 1
-
-    return lines_printed
 
 
 def main() -> None:  # noqa: PLR0912
@@ -147,9 +133,11 @@ def main() -> None:  # noqa: PLR0912
         print("All devices connected!")
         print("\nPress Ctrl+C to exit")
 
-        first_print = True
-        table_lines = 8  # Default lines for cursor positioning
         fps = 30  # Target loop rate
+
+        # Print header once (only in terminal mode)
+        if not args.display:
+            print_table_header()
 
         # Teleoperation loop
         while True:
@@ -166,10 +154,9 @@ def main() -> None:  # noqa: PLR0912
 
             # Display positions in terminal or Rerun
             if not args.display:
-                table_lines = print_positions(action, observation, first_print=first_print)
-                first_print = False
+                print_positions(action, observation)
                 # Move cursor up to overwrite on next iteration
-                move_cursor_up(table_lines)
+                move_cursor_up(NUM_JOINT_LINES)
             else:
                 # Log to Rerun (includes URDF joint updates and camera images)
                 log_observation_and_action(
@@ -186,7 +173,7 @@ def main() -> None:  # noqa: PLR0912
     except KeyboardInterrupt:
         # Move cursor down past the table before printing exit message
         if not args.display:
-            print("\n" * 8)
+            print()  # Move past the joint rows
         print("\nStopping teleoperation...")
 
     finally:
