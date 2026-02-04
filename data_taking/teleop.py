@@ -10,11 +10,13 @@ Usage:
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
+from lerobot.utils.robot_utils import precise_sleep
 
 from lib.config import get_camera_config
 from lib.config import get_urdf_config
@@ -26,39 +28,55 @@ from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_observation_and_action
 from lib.urdf_viz import save_rrd
 
+# Joint display order (short names without arm prefix)
+JOINT_ORDER = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
 
-def print_positions(leader_pos: dict, follower_pos: dict) -> None:
-    """Print a table of leader and follower positions."""
-    # Clear screen and move cursor to top
-    print("\033[2J\033[H", end="")
 
-    # Separate left and right joints
-    left_keys = sorted(k for k in leader_pos if k.startswith("left_"))
-    right_keys = sorted(k for k in leader_pos if k.startswith("right_"))
+def move_cursor_up(lines: int) -> None:
+    """Move the cursor up by a specified number of lines."""
+    print(f"\033[{lines}A", end="")
 
-    # Header
-    print(f"{'Joint':<25} {'Leader':>10} {'Follower':>10}")
-    print("-" * 47)
 
-    # Left arm
-    print("LEFT ARM")
-    for key in left_keys:
-        short_key = key.removeprefix("left_")
-        leader_val = leader_pos.get(key, 0.0)
-        follower_val = follower_pos.get(key, 0.0)
-        print(f"  {short_key:<23} {leader_val:>10.2f} {follower_val:>10.2f}")
-
+def print_table_header() -> None:
+    """Print the table header (only once at start)."""
     print()
+    print("-" * 70)
+    print(f"{'JOINT':<20} | {'LEFT':^22} | {'RIGHT':^22}")
+    print(f"{'':<20} | {'Leader':>10} {'Follower':>10} | {'Leader':>10} {'Follower':>10}")
+    print("-" * 70)
 
-    # Right arm
-    print("RIGHT ARM")
-    for key in right_keys:
-        short_key = key.removeprefix("right_")
-        leader_val = leader_pos.get(key, 0.0)
-        follower_val = follower_pos.get(key, 0.0)
-        print(f"  {short_key:<23} {leader_val:>10.2f} {follower_val:>10.2f}")
 
-    print("\nPress Ctrl+C to exit")
+def print_positions(leader_pos: dict, follower_pos: dict, first_print: bool = False) -> int:
+    """Print a table of leader and follower positions using cursor repositioning.
+
+    Returns the number of lines printed (for cursor repositioning).
+    """
+    lines_printed = 0
+
+    if first_print:
+        print_table_header()
+        lines_printed += 5
+
+    # Print each joint row
+    for joint in JOINT_ORDER:
+        left_key = f"left_{joint}.pos"
+        right_key = f"right_{joint}.pos"
+
+        left_leader = leader_pos.get(left_key, 0.0)
+        left_follower = follower_pos.get(left_key, 0.0)
+        right_leader = leader_pos.get(right_key, 0.0)
+        right_follower = follower_pos.get(right_key, 0.0)
+
+        print(
+            f"{joint:<20} | {left_leader:>10.2f} {left_follower:>10.2f} "
+            f"| {right_leader:>10.2f} {right_follower:>10.2f}"
+        )
+        lines_printed += 1
+
+    print("-" * 70)
+    lines_printed += 1
+
+    return lines_printed
 
 
 def main() -> None:  # noqa: PLR0912
@@ -126,10 +144,17 @@ def main() -> None:  # noqa: PLR0912
         teleop.connect(calibrate=False)
         print("Connecting robot...")
         robot.connect(calibrate=False)
-        print("All devices connected!\n")
+        print("All devices connected!")
+        print("\nPress Ctrl+C to exit")
+
+        first_print = True
+        table_lines = 8  # Default lines for cursor positioning
+        fps = 30  # Target loop rate
 
         # Teleoperation loop
         while True:
+            loop_start = time.perf_counter()
+
             # Get leader action (both arms combined)
             action = teleop.get_action()
 
@@ -141,7 +166,10 @@ def main() -> None:  # noqa: PLR0912
 
             # Display positions in terminal or Rerun
             if not args.display:
-                print_positions(action, observation)
+                table_lines = print_positions(action, observation, first_print=first_print)
+                first_print = False
+                # Move cursor up to overwrite on next iteration
+                move_cursor_up(table_lines)
             else:
                 # Log to Rerun (includes URDF joint updates and camera images)
                 log_observation_and_action(
@@ -151,8 +179,15 @@ def main() -> None:  # noqa: PLR0912
                     use_degrees=True,
                 )
 
+            # Maintain target FPS
+            dt_s = time.perf_counter() - loop_start
+            precise_sleep(max(1 / fps - dt_s, 0.0))
+
     except KeyboardInterrupt:
-        print("\n\nStopping teleoperation...")
+        # Move cursor down past the table before printing exit message
+        if not args.display:
+            print("\n" * 8)
+        print("\nStopping teleoperation...")
 
     finally:
         if teleop.is_connected:
