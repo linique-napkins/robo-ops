@@ -26,3 +26,16 @@ path = 0
 width = 640
 height = 480
 fps = 30
+
+[urdf]
+# Path to SO101 URDF file (relative to project root)
+# Uses the SO-ARM100 submodule by default
+path = "SO-ARM100/Simulation/SO101/so101_new_calib.urdf"
+# Offset for left arm in 3D view (x, y, z in meters)
+left_offset = [-0.2, 0.0, 0.0]
+# Offset for right arm in 3D view (x, y, z in meters)
+right_offset = [0.2, 0.0, 0.0]
+# Rotation around Z axis for left arm (degrees)
+left_rotation = 0.0
+# Rotation around Z axis for right arm (degrees)
+right_rotation = 0.0

@@ -25,6 +25,8 @@ from lerobot.policies.act.configuration_act import ACTConfig
 from lerobot.policies.act.modeling_act import ACTPolicy
 from lerobot.policies.factory import make_pre_post_processors
 
+from lib.config import OUTPUTS_DIR
+from lib.config import get_local_dataset_path
 from lib.config import load_config
 
 app = typer.Typer()
@@ -123,8 +125,11 @@ def main(  # noqa: PLR0912
     typer.echo(f"\nUsing device: {device}")
 
     # Load dataset metadata and features
-    typer.echo(f"\nLoading dataset: {training_cfg['dataset_repo_id']}")
-    dataset_metadata = LeRobotDatasetMetadata(training_cfg["dataset_repo_id"])
+    # Uses local data/datasets/ path, falling back to HuggingFace Hub download
+    dataset_repo_id = training_cfg["dataset_repo_id"]
+    local_path = get_local_dataset_path(dataset_repo_id)
+    typer.echo(f"\nLoading dataset: {dataset_repo_id}")
+    dataset_metadata = LeRobotDatasetMetadata(dataset_repo_id, root=local_path)
     features = dataset_to_policy_features(dataset_metadata.features)
 
     output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
@@ -173,7 +178,7 @@ def main(  # noqa: PLR0912
 
     # Load dataset
     typer.echo("\nLoading full dataset...")
-    dataset = LeRobotDataset(training_cfg["dataset_repo_id"], delta_timestamps=delta_timestamps)
+    dataset = LeRobotDataset(dataset_repo_id, root=local_path, delta_timestamps=delta_timestamps)
     typer.echo(f"  Episodes: {dataset.num_episodes}")
     typer.echo(f"  Frames: {len(dataset)}")
 
@@ -188,8 +193,8 @@ def main(  # noqa: PLR0912
         num_workers=4,
     )
 
-    # Setup output directory
-    output_dir = Path("outputs") / training_cfg["output_repo_id"].replace("/", "_")
+    # Setup output directory (in data/outputs/)
+    output_dir = OUTPUTS_DIR / training_cfg["output_repo_id"].replace("/", "_")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize wandb

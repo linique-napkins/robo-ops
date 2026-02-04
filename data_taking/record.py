@@ -24,23 +24,22 @@ from lerobot.datasets.utils import combine_feature_dicts
 from lerobot.datasets.video_utils import VideoEncodingManager
 from lerobot.processor import make_default_processors
 from lerobot.robots.bi_so_follower import BiSOFollower
-from lerobot.robots.bi_so_follower import BiSOFollowerConfig
-from lerobot.robots.so_follower import SOFollowerConfig
 from lerobot.scripts.lerobot_record import record_loop
-from lerobot.teleoperators.bi_so_leader import BiSOLeader
-from lerobot.teleoperators.bi_so_leader import BiSOLeaderConfig
-from lerobot.teleoperators.so_leader import SOLeaderConfig
 from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.utils import log_say
-from lerobot.utils.visualization_utils import init_rerun
 
 from lib.config import dataset_exists_on_hub
 from lib.config import get_camera_config
 from lib.config import get_git_info
 from lib.config import get_local_dataset_path
 from lib.config import get_recording_config
+from lib.config import get_urdf_config
 from lib.config import load_config
 from lib.config import validate_config
+from lib.robots import get_bimanual_follower
+from lib.robots import get_bimanual_leader
+from lib.urdf_viz import init_rerun_with_urdf
+from lib.urdf_viz import save_rrd
 
 app = typer.Typer()
 
@@ -50,16 +49,16 @@ LOCAL_CONFIG_PATH = Path(__file__).parent / "config.toml"
 
 def print_config(config: dict, recording_cfg: dict) -> None:
     """Print configuration summary."""
-    camera = get_camera_config(config)
+    cameras = get_camera_config(config)
 
     typer.echo("Configuration:")
     typer.echo(f"  Left Leader:    {config['leader']['left']['port']}")
     typer.echo(f"  Right Leader:   {config['leader']['right']['port']}")
     typer.echo(f"  Left Follower:  {config['follower']['left']['port']}")
     typer.echo(f"  Right Follower: {config['follower']['right']['port']}")
-    typer.echo(
-        f"  Camera:         {camera['path']} ({camera['width']}x{camera['height']} @ {camera['fps']}fps)"  # noqa: E501
-    )
+    typer.echo("  Cameras:")
+    for name, cam in cameras.items():
+        typer.echo(f"    {name}: {cam['path']} ({cam['width']}x{cam['height']} @ {cam['fps']}fps)")
     typer.echo("\nRecording settings:")
     typer.echo(f"  Repository:     {recording_cfg['repo_id']}")
     typer.echo(f"  Task:           {recording_cfg['task']}")
@@ -75,10 +74,28 @@ def create_or_resume_dataset(
     robot: BiSOFollower,
     dataset_features: dict,
 ) -> LeRobotDataset:
-    """Create a new dataset or resume an existing one."""
+    """Create a new dataset or resume an existing one.
+
+    Datasets are stored locally in data/datasets/{repo_id}.
+    When resuming, checks for local dataset first, then HuggingFace Hub.
+    """
+    local_path = get_local_dataset_path(repo_id)
+
+    # Check for existing local dataset first
+    if resume and local_path.exists():
+        typer.echo(f"Resuming local dataset: {local_path}")
+        dataset = LeRobotDataset(repo_id, root=local_path)
+        if robot.cameras:
+            dataset.start_image_writer(
+                num_processes=0,
+                num_threads=4 * len(robot.cameras),
+            )
+        return dataset
+
+    # Check for existing dataset on HuggingFace Hub
     if resume and dataset_exists_on_hub(repo_id):
-        typer.echo(f"Resuming dataset: {repo_id}")
-        dataset = LeRobotDataset(repo_id)
+        typer.echo(f"Downloading and resuming dataset from Hub: {repo_id}")
+        dataset = LeRobotDataset(repo_id, root=local_path)
         if robot.cameras:
             dataset.start_image_writer(
                 num_processes=0,
@@ -92,7 +109,6 @@ def create_or_resume_dataset(
         typer.echo(f"Creating new dataset: {repo_id}")
 
     # Clean up stale local cache if it exists (from failed previous runs)
-    local_path = get_local_dataset_path(repo_id)
     if local_path.exists():
         typer.echo(f"Removing stale local cache: {local_path}")
         shutil.rmtree(local_path)
@@ -100,6 +116,7 @@ def create_or_resume_dataset(
     return LeRobotDataset.create(
         repo_id=repo_id,
         fps=fps,
+        root=local_path,
         robot_type=robot.name,
         features=dataset_features,
         use_videos=True,
@@ -137,14 +154,8 @@ def main(  # noqa: PLR0912
     local_config = load_config(LOCAL_CONFIG_PATH)
     config.update(local_config)
 
-    # Get port configurations
-    left_leader_cfg = config["leader"]["left"]
-    right_leader_cfg = config["leader"]["right"]
-    left_follower_cfg = config["follower"]["left"]
-    right_follower_cfg = config["follower"]["right"]
-
     # Get camera and recording configuration
-    camera_cfg = get_camera_config(config)
+    cameras_cfg = get_camera_config(config)
     recording_cfg = get_recording_config(config)
 
     repo_id = recording_cfg["repo_id"]
@@ -169,40 +180,20 @@ def main(  # noqa: PLR0912
 
     log_say("Starting data collection", play_sounds=True)
 
-    # Create bimanual robot configuration
-    robot_config = BiSOFollowerConfig(
-        id="bimanual_follower",
-        left_arm_config=SOFollowerConfig(
-            port=left_follower_cfg["port"],
-            cameras={
-                "top_cam": OpenCVCameraConfig(
-                    index_or_path=camera_cfg["path"],
-                    width=camera_cfg["width"],
-                    height=camera_cfg["height"],
-                    fps=camera_cfg["fps"],
-                ),
-            },
-        ),
-        right_arm_config=SOFollowerConfig(
-            port=right_follower_cfg["port"],
-        ),
-    )
+    # Build camera configs for robot
+    camera_configs = {}
+    for name, cam in cameras_cfg.items():
+        camera_configs[f"{name}_cam"] = OpenCVCameraConfig(
+            index_or_path=cam["path"],
+            width=cam["width"],
+            height=cam["height"],
+            fps=cam["fps"],
+        )
 
-    # Create bimanual teleoperator configuration
-    teleop_config = BiSOLeaderConfig(
-        id="bimanual_leader",
-        left_arm_config=SOLeaderConfig(
-            port=left_leader_cfg["port"],
-        ),
-        right_arm_config=SOLeaderConfig(
-            port=right_leader_cfg["port"],
-        ),
-    )
-
-    # Initialize robot and teleoperator
+    # Initialize robot and teleoperator using factory functions
     typer.echo("\nInitializing robot and teleoperator...")
-    robot = BiSOFollower(robot_config)
-    teleop = BiSOLeader(teleop_config)
+    robot = get_bimanual_follower(config, cameras=camera_configs)
+    teleop = get_bimanual_leader(config)
 
     # Create processors
     teleop_action_processor, robot_action_processor, robot_observation_processor = (
@@ -226,7 +217,8 @@ def main(  # noqa: PLR0912
     dataset = None
     listener = None
 
-    fps = camera_cfg["fps"]
+    # Use FPS from first camera (they should all be the same)
+    fps = next(iter(cameras_cfg.values()))["fps"]
 
     try:
         # Create or load dataset
@@ -248,7 +240,18 @@ def main(  # noqa: PLR0912
         # Initialize keyboard listener and visualization
         listener, events = init_keyboard_listener()
         if display:
-            init_rerun(session_name="recording")
+            urdf_cfg = get_urdf_config(config)
+            # Initialize rerun with URDF - visualizer is stored globally and used
+            # by log_rerun_data via log_urdf_state callback
+            init_rerun_with_urdf(
+                session_name="recording",
+                urdf_path=urdf_cfg["path"],
+                left_offset=urdf_cfg["left_offset"],
+                right_offset=urdf_cfg["right_offset"],
+                left_rotation_deg=urdf_cfg["left_rotation"],
+                right_rotation_deg=urdf_cfg["right_rotation"],
+                camera_names=list(cameras_cfg.keys()),
+            )
 
         typer.echo("\n=== Starting Recording ===")
         typer.echo("Controls:")
@@ -341,6 +344,12 @@ def main(  # noqa: PLR0912
             dataset.push_to_hub()
             log_say("Upload complete.", play_sounds=True)
             typer.echo("Dataset uploaded successfully!")
+
+        # Save Rerun recording
+        if display:
+            rrd_path = save_rrd()
+            if rrd_path:
+                typer.echo(f"Rerun recording saved to: {rrd_path}")
 
     typer.echo("\nRecording complete!")
 

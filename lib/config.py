@@ -7,11 +7,17 @@ import tomllib
 from pathlib import Path
 
 from huggingface_hub import HfApi
-from lerobot.datasets.lerobot_dataset import HF_LEROBOT_HOME
 
 # Root directory of the project
 ROOT_DIR = Path(__file__).parent.parent
 CONFIG_PATH = ROOT_DIR / "config.toml"
+CALIBRATION_DIR = ROOT_DIR / "calibration"
+
+# Data directory for all local data storage (gitignored)
+DATA_DIR = ROOT_DIR / "data"
+DATASETS_DIR = DATA_DIR / "datasets"
+RECORDINGS_DIR = DATA_DIR / "recordings"
+OUTPUTS_DIR = DATA_DIR / "outputs"
 
 
 def load_config(config_path: Path | None = None) -> dict:
@@ -38,15 +44,52 @@ def validate_config(config: dict) -> None:
                 raise ValueError(msg)
 
 
-def get_camera_config(config: dict) -> dict:
-    """Get camera configuration with defaults."""
-    camera = config.get("camera", {})
-    return {
-        "path": camera.get("path", 0),
-        "width": camera.get("width", 640),
-        "height": camera.get("height", 480),
-        "fps": camera.get("fps", 30),
+def get_camera_config(config: dict, camera_name: str | None = None) -> dict:
+    """Get camera configuration with defaults.
+
+    Args:
+        config: Full configuration dictionary.
+        camera_name: Name of camera to get config for (top, left, right).
+                    If None, returns all cameras as a dict.
+
+    Returns:
+        Single camera config dict if camera_name specified,
+        otherwise dict of all camera configs keyed by name.
+    """
+    camera_section = config.get("camera", {})
+
+    # Default camera settings
+    defaults = {
+        "path": 0,
+        "width": 640,
+        "height": 480,
+        "fps": 30,
     }
+
+    def get_single_camera(cam_cfg: dict) -> dict:
+        return {
+            "path": cam_cfg.get("path", defaults["path"]),
+            "width": cam_cfg.get("width", defaults["width"]),
+            "height": cam_cfg.get("height", defaults["height"]),
+            "fps": cam_cfg.get("fps", defaults["fps"]),
+        }
+
+    # If specific camera requested
+    if camera_name:
+        cam_cfg = camera_section.get(camera_name, {})
+        return get_single_camera(cam_cfg)
+
+    # Return all cameras
+    cameras = {}
+    for name in ["top", "left", "right"]:
+        if name in camera_section:
+            cameras[name] = get_single_camera(camera_section[name])
+
+    # Fallback for legacy single-camera config (backward compatibility)
+    if not cameras and "path" in camera_section:
+        cameras["top"] = get_single_camera(camera_section)
+
+    return cameras
 
 
 def get_recording_config(config: dict) -> dict:
@@ -61,6 +104,36 @@ def get_recording_config(config: dict) -> dict:
     }
 
 
+def get_urdf_config(config: dict) -> dict:
+    """Get URDF visualization configuration with defaults."""
+    urdf = config.get("urdf", {})
+    return {
+        "path": ROOT_DIR / urdf.get("path", "SO-ARM100/Simulation/SO101/so101_new_calib.urdf"),
+        "left_offset": tuple(urdf.get("left_offset", [-0.2, 0.0, 0.0])),
+        "right_offset": tuple(urdf.get("right_offset", [0.2, 0.0, 0.0])),
+        "left_rotation": urdf.get("left_rotation", 0.0),
+        "right_rotation": urdf.get("right_rotation", 0.0),
+    }
+
+
+def get_calibration_dir(role: str) -> Path:
+    """Get calibration directory for a role (leader or follower).
+
+    Calibration files are stored in the repo at:
+        calibration/leader/left.json
+        calibration/leader/right.json
+        calibration/follower/left.json
+        calibration/follower/right.json
+
+    Args:
+        role: Either 'leader' or 'follower'.
+
+    Returns:
+        Path to the calibration directory for that role.
+    """
+    return CALIBRATION_DIR / role
+
+
 def dataset_exists_on_hub(repo_id: str) -> bool:
     """Check if a dataset with actual data exists on Hugging Face Hub."""
     hub_api = HfApi()
@@ -72,8 +145,13 @@ def dataset_exists_on_hub(repo_id: str) -> bool:
 
 
 def get_local_dataset_path(repo_id: str) -> Path:
-    """Get the local cache path for a dataset."""
-    return HF_LEROBOT_HOME / repo_id
+    """Get the local path for a dataset.
+
+    Datasets are stored in data/datasets/{repo_id} instead of the
+    HuggingFace cache (~/.cache/huggingface/lerobot/).
+    """
+    DATASETS_DIR.mkdir(parents=True, exist_ok=True)
+    return DATASETS_DIR / repo_id
 
 
 def get_git_info() -> dict:

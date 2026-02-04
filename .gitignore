@@ -15,5 +15,5 @@ wheels/
 # Hardware config with machine-specific ports (use config.toml.example as template)
 /config.toml
 
-# Training outputs
-outputs/
+# Data directory (datasets, recordings, training outputs)
+data/

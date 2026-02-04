@@ -1,26 +1,30 @@
 """
 Bimanual teleoperation script using the BiSOLeader and BiSOFollower APIs.
 
-Controls both left and right arm pairs simultaneously.
+Controls both left and right arm pairs simultaneously with optional camera visualization.
 
 Usage:
     uv run data_taking/teleop.py
+    uv run data_taking/teleop.py --display  # With Rerun + URDF + camera visualization
 """
 
+import argparse
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lerobot.robots.bi_so_follower import BiSOFollower
-from lerobot.robots.bi_so_follower import BiSOFollowerConfig
-from lerobot.robots.so_follower import SOFollowerConfig
-from lerobot.teleoperators.bi_so_leader import BiSOLeader
-from lerobot.teleoperators.bi_so_leader import BiSOLeaderConfig
-from lerobot.teleoperators.so_leader import SOLeaderConfig
+from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 
+from lib.config import get_camera_config
+from lib.config import get_urdf_config
 from lib.config import load_config
 from lib.config import validate_config
+from lib.robots import get_bimanual_follower
+from lib.robots import get_bimanual_leader
+from lib.urdf_viz import init_rerun_with_urdf
+from lib.urdf_viz import log_observation_and_action
+from lib.urdf_viz import save_rrd
 
 
 def print_positions(leader_pos: dict, follower_pos: dict) -> None:
@@ -57,48 +61,64 @@ def print_positions(leader_pos: dict, follower_pos: dict) -> None:
     print("\nPress Ctrl+C to exit")
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0912
     """Run bimanual teleoperation."""
+    parser = argparse.ArgumentParser(
+        description="Bimanual teleoperation with optional visualization"
+    )
+    parser.add_argument(
+        "--display",
+        action="store_true",
+        help="Enable Rerun visualization with 3D robot model and cameras",
+    )
+    args = parser.parse_args()
+
     config = load_config()
     validate_config(config)
 
-    # Get port configurations
-    left_leader_cfg = config["leader"]["left"]
-    right_leader_cfg = config["leader"]["right"]
-    left_follower_cfg = config["follower"]["left"]
-    right_follower_cfg = config["follower"]["right"]
-
     print("=== Bimanual Teleoperation ===\n")
-    print(f"Left Leader:    {left_leader_cfg['port']}")
-    print(f"Right Leader:   {right_leader_cfg['port']}")
-    print(f"Left Follower:  {left_follower_cfg['port']}")
-    print(f"Right Follower: {right_follower_cfg['port']}")
+    print(f"Left Leader:    {config['leader']['left']['port']}")
+    print(f"Right Leader:   {config['leader']['right']['port']}")
+    print(f"Left Follower:  {config['follower']['left']['port']}")
+    print(f"Right Follower: {config['follower']['right']['port']}")
 
-    # Create bimanual robot configuration
-    robot_config = BiSOFollowerConfig(
-        id="bimanual_follower",
-        left_arm_config=SOFollowerConfig(
-            port=left_follower_cfg["port"],
-        ),
-        right_arm_config=SOFollowerConfig(
-            port=right_follower_cfg["port"],
-        ),
-    )
+    # Build camera configs if display is enabled
+    camera_configs = {}
+    cameras_cfg = {}
+    if args.display:
+        cameras_cfg = get_camera_config(config)
+        print("  Cameras:")
+        for name, cam in cameras_cfg.items():
+            print(f"    {name}: {cam['path']} ({cam['width']}x{cam['height']} @ {cam['fps']}fps)")
+            camera_configs[f"{name}_cam"] = OpenCVCameraConfig(
+                index_or_path=cam["path"],
+                width=cam["width"],
+                height=cam["height"],
+                fps=cam["fps"],
+            )
 
-    # Create bimanual teleoperator configuration
-    teleop_config = BiSOLeaderConfig(
-        id="bimanual_leader",
-        left_arm_config=SOLeaderConfig(
-            port=left_leader_cfg["port"],
-        ),
-        right_arm_config=SOLeaderConfig(
-            port=right_leader_cfg["port"],
-        ),
-    )
+    # Create robot and teleoperator using factory functions
+    robot = get_bimanual_follower(config, cameras=camera_configs if camera_configs else None)
+    teleop = get_bimanual_leader(config)
 
-    # Create instances
-    robot = BiSOFollower(robot_config)
-    teleop = BiSOLeader(teleop_config)
+    # Initialize visualization if requested
+    visualizer = None
+    if args.display:
+        urdf_cfg = get_urdf_config(config)
+        print("\nInitializing Rerun visualization with URDF...")
+        visualizer = init_rerun_with_urdf(
+            session_name="teleop",
+            urdf_path=urdf_cfg["path"],
+            left_offset=urdf_cfg["left_offset"],
+            right_offset=urdf_cfg["right_offset"],
+            left_rotation_deg=urdf_cfg["left_rotation"],
+            right_rotation_deg=urdf_cfg["right_rotation"],
+            camera_names=list(cameras_cfg.keys()) if cameras_cfg else None,
+        )
+        if visualizer:
+            print("URDF visualization initialized!")
+        else:
+            print("Warning: URDF visualization failed to initialize")
 
     try:
         # Connect (skip calibration - assumes already calibrated)
@@ -116,11 +136,20 @@ def main() -> None:
             # Send to follower (both arms combined)
             robot.send_action(action)
 
-            # Get follower observation (both arms combined)
+            # Get follower observation (both arms combined + camera images)
             observation = robot.get_observation()
 
-            # Display positions
-            print_positions(action, observation)
+            # Display positions in terminal or Rerun
+            if not args.display:
+                print_positions(action, observation)
+            else:
+                # Log to Rerun (includes URDF joint updates and camera images)
+                log_observation_and_action(
+                    visualizer=visualizer,
+                    observation=observation,
+                    action=action,
+                    use_degrees=True,
+                )
 
     except KeyboardInterrupt:
         print("\n\nStopping teleoperation...")
@@ -132,6 +161,12 @@ def main() -> None:
         if robot.is_connected:
             print("Disconnecting robot...")
             robot.disconnect()
+
+        # Save Rerun recording
+        if args.display:
+            rrd_path = save_rrd()
+            if rrd_path:
+                print(f"Rerun recording saved to: {rrd_path}")
 
     print("Done!")
 

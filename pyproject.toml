@@ -10,6 +10,7 @@ dependencies = [
     "typer>=0.15.0",
     "opencv-python>=4.10.0",
     "numpy>=2.0.0",
+    "trimesh>=4.0.0",
 ]
 
 [tool.uv.sources]

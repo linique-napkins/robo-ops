@@ -23,20 +23,21 @@ from lerobot.policies.factory import make_policy
 from lerobot.policies.factory import make_pre_post_processors
 from lerobot.policies.utils import make_robot_action
 from lerobot.processor import make_default_processors
-from lerobot.robots.bi_so_follower import BiSOFollower
-from lerobot.robots.bi_so_follower import BiSOFollowerConfig
-from lerobot.robots.so_follower import SOFollowerConfig
 from lerobot.utils.constants import OBS_STR
 from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.control_utils import predict_action
 from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.utils import get_safe_torch_device
 from lerobot.utils.utils import log_say
-from lerobot.utils.visualization_utils import init_rerun
 
 from lib.config import get_camera_config
+from lib.config import get_local_dataset_path
+from lib.config import get_urdf_config
 from lib.config import load_config
 from lib.config import validate_config
+from lib.robots import get_bimanual_follower
+from lib.urdf_viz import init_rerun_with_urdf
+from lib.urdf_viz import log_observation_and_action
 
 app = typer.Typer()
 
@@ -69,7 +70,7 @@ def get_inference_config(config: dict) -> dict:
 
 def print_inference_config(config: dict, inference_cfg: dict) -> None:
     """Print inference configuration summary."""
-    camera = get_camera_config(config)
+    cameras = get_camera_config(config)
 
     typer.echo("\nInference Configuration:")
     typer.echo(f"  Policy:         {inference_cfg['policy_repo_id']}")
@@ -81,8 +82,9 @@ def print_inference_config(config: dict, inference_cfg: dict) -> None:
     typer.echo("\nHardware Configuration:")
     typer.echo(f"  Left Follower:  {config['follower']['left']['port']}")
     typer.echo(f"  Right Follower: {config['follower']['right']['port']}")
-    cam_info = f"{camera['path']} ({camera['width']}x{camera['height']} @ {camera['fps']}fps)"
-    typer.echo(f"  Camera:         {cam_info}")
+    typer.echo("  Cameras:")
+    for name, cam in cameras.items():
+        typer.echo(f"    {name}: {cam['path']} ({cam['width']}x{cam['height']} @ {cam['fps']}fps)")
 
 
 @app.command()
@@ -106,7 +108,7 @@ def main(
 
     # Get configurations
     inference_cfg = get_inference_config(config)
-    camera_cfg = get_camera_config(config)
+    cameras_cfg = get_camera_config(config)
 
     # Override display from config if not specified
     if "display" in inference_cfg:
@@ -128,8 +130,11 @@ def main(
     policy_cfg.pretrained_path = inference_cfg["policy_repo_id"]
 
     # Load dataset for features (needed to build observation frames)
-    typer.echo(f"Loading dataset metadata from: {inference_cfg['dataset_repo_id']}")
-    dataset = LeRobotDataset(inference_cfg["dataset_repo_id"])
+    # Uses local data/datasets/ path, falling back to HuggingFace Hub download
+    dataset_repo_id = inference_cfg["dataset_repo_id"]
+    local_path = get_local_dataset_path(dataset_repo_id)
+    typer.echo(f"Loading dataset metadata from: {dataset_repo_id}")
+    dataset = LeRobotDataset(dataset_repo_id, root=local_path)
 
     # Create policy
     typer.echo("Creating policy model...")
@@ -148,32 +153,19 @@ def main(
     # Create robot observation/action processors
     _, robot_action_processor, robot_observation_processor = make_default_processors()
 
-    # Get port configurations
-    left_follower_cfg = config["follower"]["left"]
-    right_follower_cfg = config["follower"]["right"]
+    # Build camera configs for robot
+    camera_configs = {}
+    for name, cam in cameras_cfg.items():
+        camera_configs[f"{name}_cam"] = OpenCVCameraConfig(
+            index_or_path=cam["path"],
+            width=cam["width"],
+            height=cam["height"],
+            fps=cam["fps"],
+        )
 
-    # Create bimanual robot configuration
-    robot_config = BiSOFollowerConfig(
-        id="bimanual_follower",
-        left_arm_config=SOFollowerConfig(
-            port=left_follower_cfg["port"],
-            cameras={
-                "top_cam": OpenCVCameraConfig(
-                    index_or_path=camera_cfg["path"],
-                    width=camera_cfg["width"],
-                    height=camera_cfg["height"],
-                    fps=camera_cfg["fps"],
-                ),
-            },
-        ),
-        right_arm_config=SOFollowerConfig(
-            port=right_follower_cfg["port"],
-        ),
-    )
-
-    # Initialize robot
+    # Initialize robot using factory function
     typer.echo("\nInitializing robot...")
-    robot = BiSOFollower(robot_config)
+    robot = get_bimanual_follower(config, cameras=camera_configs)
 
     listener = None
     fps = inference_cfg["fps"]
@@ -190,8 +182,18 @@ def main(
         listener, events = init_keyboard_listener()
 
         # Initialize visualization
+        visualizer = None
         if display:
-            init_rerun(session_name="inference")
+            urdf_cfg = get_urdf_config(config)
+            visualizer = init_rerun_with_urdf(
+                session_name="inference",
+                urdf_path=urdf_cfg["path"],
+                left_offset=urdf_cfg["left_offset"],
+                right_offset=urdf_cfg["right_offset"],
+                left_rotation_deg=urdf_cfg["left_rotation"],
+                right_rotation_deg=urdf_cfg["right_rotation"],
+                camera_names=list(cameras_cfg.keys()),
+            )
 
         log_say("Starting inference. Press Q to stop.", play_sounds=True)
         typer.echo("\n=== Running Inference ===")
@@ -230,6 +232,15 @@ def main(
 
             # 5. Send action to robot
             robot.send_action(robot_action_processor((robot_action, obs)))
+
+            # 6. Log visualization if enabled
+            if display:
+                log_observation_and_action(
+                    visualizer=visualizer,
+                    observation=obs,
+                    action=robot_action,
+                    use_degrees=True,
+                )
 
             step += 1
 
