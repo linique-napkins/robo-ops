@@ -28,7 +28,6 @@ from lerobot.scripts.lerobot_record import record_loop
 from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.utils import log_say
 
-from lib.config import dataset_exists_on_hub
 from lib.config import get_camera_config
 from lib.config import get_git_info
 from lib.config import get_local_dataset_path
@@ -67,6 +66,26 @@ def print_config(config: dict, recording_cfg: dict) -> None:
     typer.echo(f"  Reset time:     {recording_cfg['reset_time']}s")
 
 
+def is_valid_local_dataset(local_path: Path) -> bool:
+    """Check if a local dataset directory contains a valid, complete dataset.
+
+    A valid dataset must have:
+    - meta/info.json
+    - meta/tasks.json (or meta/tasks.jsonl)
+    - At least one episode parquet file OR be empty (0 episodes)
+    """
+    meta_dir = local_path / "meta"
+    if not meta_dir.exists():
+        return False
+
+    # Check required metadata files
+    if not (meta_dir / "info.json").exists():
+        return False
+
+    # tasks.json is required for a complete dataset
+    return (meta_dir / "tasks.json").exists() or (meta_dir / "tasks.jsonl").exists()
+
+
 def create_or_resume_dataset(
     resume: bool,
     repo_id: str,
@@ -77,12 +96,12 @@ def create_or_resume_dataset(
     """Create a new dataset or resume an existing one.
 
     Datasets are stored locally in data/datasets/{repo_id}.
-    When resuming, checks for local dataset first, then HuggingFace Hub.
+    Only checks for local datasets - does not contact HuggingFace Hub.
     """
     local_path = get_local_dataset_path(repo_id)
 
-    # Check for existing local dataset first
-    if resume and local_path.exists():
+    # Check for existing valid local dataset
+    if resume and local_path.exists() and is_valid_local_dataset(local_path):
         typer.echo(f"Resuming local dataset: {local_path}")
         dataset = LeRobotDataset(repo_id, root=local_path)
         if robot.cameras:
@@ -92,25 +111,18 @@ def create_or_resume_dataset(
             )
         return dataset
 
-    # Check for existing dataset on HuggingFace Hub
-    if resume and dataset_exists_on_hub(repo_id):
-        typer.echo(f"Downloading and resuming dataset from Hub: {repo_id}")
-        dataset = LeRobotDataset(repo_id, root=local_path)
-        if robot.cameras:
-            dataset.start_image_writer(
-                num_processes=0,
-                num_threads=4 * len(robot.cameras),
-            )
-        return dataset
+    if resume and local_path.exists():
+        typer.echo(f"Found incomplete dataset at {local_path}, removing...")
+        shutil.rmtree(local_path)
 
     if resume:
-        typer.echo(f"No existing dataset found at {repo_id}, creating new dataset...")
+        typer.echo("No valid local dataset found, creating new dataset...")
     else:
         typer.echo(f"Creating new dataset: {repo_id}")
 
     # Clean up stale local cache if it exists (from failed previous runs)
     if local_path.exists():
-        typer.echo(f"Removing stale local cache: {local_path}")
+        typer.echo(f"Removing existing local data: {local_path}")
         shutil.rmtree(local_path)
 
     return LeRobotDataset.create(
@@ -128,7 +140,7 @@ def create_or_resume_dataset(
 @app.command()
 def main(  # noqa: PLR0912
     push_to_hub: bool = typer.Option(
-        True,
+        False,
         "--push/--no-push",
         help="Push dataset to Hugging Face Hub after recording",
     ),
