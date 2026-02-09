@@ -11,6 +11,7 @@ dependencies = [
     "opencv-python>=4.10.0",
     "numpy>=2.0.0",
     "trimesh>=4.0.0",
+    "pyrealsense2>=2.55.1 ; sys_platform == 'linux'",
 ]
 
 [tool.uv.sources]

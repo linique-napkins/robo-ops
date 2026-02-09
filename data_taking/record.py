@@ -200,6 +200,7 @@ def main(  # noqa: PLR0912
             width=cam["width"],
             height=cam["height"],
             fps=cam["fps"],
+            fourcc=cam["fourcc"],
         )
 
     # Initialize robot and teleoperator using factory functions

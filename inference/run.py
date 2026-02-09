@@ -161,6 +161,7 @@ def main(
             width=cam["width"],
             height=cam["height"],
             fps=cam["fps"],
+            fourcc=cam["fourcc"],
         )
 
     # Initialize robot using factory function

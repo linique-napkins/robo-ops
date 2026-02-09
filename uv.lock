@@ -949,6 +949,7 @@ dependencies = [
     { name = "lerobot", extra = ["feetech", "phone"] },
     { name = "numpy" },
     { name = "opencv-python" },
+    { name = "pyrealsense2", marker = "sys_platform == 'linux'" },
     { name = "trimesh" },
     { name = "typer" },
     { name = "wandb" },
@@ -965,6 +966,7 @@ requires-dist = [
     { name = "lerobot", extras = ["feetech", "phone"], editable = "lerobot" },
     { name = "numpy", specifier = ">=2.0.0" },
     { name = "opencv-python", specifier = ">=4.10.0" },
+    { name = "pyrealsense2", marker = "sys_platform == 'linux'", specifier = ">=2.55.1" },
     { name = "trimesh", specifier = ">=4.0.0" },
     { name = "typer", specifier = ">=0.15.0" },
     { name = "wandb", specifier = ">=0.21.4" },
@@ -1849,6 +1851,14 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/67/43/b1f0ad3b842ab150a7e6b7d97f6257eab6af241b4c7d14cb8e7fde9214b8/pyobjc_framework_quartz-12.1-cp313-cp313t-macosx_10_13_universal2.whl", hash = "sha256:53b84e880c358ba1ddcd7e8d5ea0407d760eca58b96f0d344829162cda5f37b3", size = 224317, upload-time = "2025-11-14T10:00:30.703Z" },
     { url = "https://files.pythonhosted.org/packages/4a/00/96249c5c7e5aaca5f688ca18b8d8ad05cd7886ebd639b3c71a6a4cadbe75/pyobjc_framework_quartz-12.1-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:42d306b07f05ae7d155984503e0fb1b701fecd31dcc5c79fe8ab9790ff7e0de0", size = 219558, upload-time = "2025-11-14T10:00:45.476Z" },
     { url = "https://files.pythonhosted.org/packages/4d/a6/708a55f3ff7a18c403b30a29a11dccfed0410485a7548c60a4b6d4cc0676/pyobjc_framework_quartz-12.1-cp314-cp314t-macosx_10_15_universal2.whl", hash = "sha256:0cc08fddb339b2760df60dea1057453557588908e42bdc62184b6396ce2d6e9a", size = 224580, upload-time = "2025-11-14T10:01:00.091Z" },
+]
+
+[[package]]
+name = "pyrealsense2"
+version = "2.56.5.9235"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/66/fa706f1d906a06d5e7015d5b412a48de9914549792eb5cb53c1854e06427/pyrealsense2-2.56.5.9235-cp313-cp313-manylinux1_x86_64.whl", hash = "sha256:c203bc8c79d5958889681408f1038ee69b0021fd8cba7ff2d4532fc90295c4fc", size = 11062717, upload-time = "2025-07-28T14:59:30.072Z" },
 ]
 
 [[package]]

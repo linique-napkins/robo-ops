@@ -47,46 +47,28 @@ gh repo clone linique-napkins/robo-ops
 
 ### Find robot arm ports
 
-Find each device.
+Run the motor discovery script and wiggle each arm when prompted:
 ```bash
-uv run lerobot-find-port
+uv run utils/find_motors.py
 ```
 
-For each device update the config file at `config.toml`.
+This will detect all connected motor controllers, identify each arm by movement, and output stable `/dev/serial/by-id/` paths that persist across reboots. Copy the output into `config.toml`.
 
-### Find camera path
+### Find cameras
 
-To find your camera device path:
-
-**On macOS:**
+Take a test photo from each configured camera:
 ```bash
-# List video devices
-system_profiler SPCameraDataType
-```
-macOS typically uses integer indices (0, 1, 2...) for cameras. Use `0` for the default camera, or try higher numbers if you have multiple cameras.
-
-**On Linux:**
-```bash
-# List video devices
-ls -la /dev/video*
-
-# For stable paths that persist across reboots, use by-id:
-ls -la /dev/v4l/by-id/
+uv run utils/test_cameras.py
 ```
 
-On Linux, prefer using the `/dev/v4l/by-id/` path (e.g., `/dev/v4l/by-id/usb-HD_Camera_HD_Camera-video-index0`) for consistent identification across reboots.
-
-Update the `[camera]` section in `config.toml`:
-```toml
-[camera]
-path = 0                    # macOS: use index (0, 1, 2...)
-# path = "/dev/v4l/by-id/usb-XXX-video-index0"  # Linux: use stable path
-width = 640
-height = 480
-fps = 30
-```
+Photos are saved to `outputs/camera_test/`. Update the `[camera.*]` sections in `config.toml` with the correct device indices or paths. On Linux, USB 2.0 cameras sharing a bus need `fourcc = "MJPG"` to avoid bandwidth issues.
 
 ### 3.5. Configure the devices
+
+If on linux you need to add the user to dialout:
+```bash
+sudo usermod -aG dialout $USER
+```
 
 YOU SHOULD NOT NEED TO RUN THIS STEP AS THE MOTORS ARE ALREADY SETUP!
 ```bash
@@ -173,12 +155,17 @@ Press `q` to stop inference.
 
 ```
 .
-├── config.toml           # Global hardware config (ports, camera)
+├── config.toml           # Global hardware config (ports, cameras)
 ├── lib/
 │   └── config.py         # Shared config utilities
 ├── setup/
 │   ├── calibrate.py      # Arm calibration
 │   └── motor_setup.py    # Motor configuration
+├── utils/
+│   ├── find_motors.py    # Motor port discovery
+│   ├── health.py         # Motor health check
+│   ├── test_cameras.py   # Camera test photos
+│   └── test_realsense.py # RealSense camera viewer
 ├── data_taking/
 │   ├── config.toml       # Recording settings
 │   ├── record.py         # Data collection with audio cues

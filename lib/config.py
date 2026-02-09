@@ -64,6 +64,7 @@ def get_camera_config(config: dict, camera_name: str | None = None) -> dict:
         "width": 640,
         "height": 480,
         "fps": 30,
+        "fourcc": None,
     }
 
     def get_single_camera(cam_cfg: dict) -> dict:
@@ -72,6 +73,7 @@ def get_camera_config(config: dict, camera_name: str | None = None) -> dict:
             "width": cam_cfg.get("width", defaults["width"]),
             "height": cam_cfg.get("height", defaults["height"]),
             "fps": cam_cfg.get("fps", defaults["fps"]),
+            "fourcc": cam_cfg.get("fourcc", defaults["fourcc"]),
         }
 
     # If specific camera requested

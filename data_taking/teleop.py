@@ -99,6 +99,7 @@ def main() -> None:  # noqa: PLR0912
                 width=cam["width"],
                 height=cam["height"],
                 fps=cam["fps"],
+                fourcc=cam["fourcc"],
             )
 
     # Create robot and teleoperator using factory functions
