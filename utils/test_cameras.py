@@ -1,8 +1,8 @@
 """
-Capture a photo from each camera defined in config.toml and save to outputs/.
+Capture a photo from each camera index and each configured camera.
 
-Takes a full-resolution frame from each camera, applies a center crop to the
-configured width x height, and saves both the original and cropped images.
+First scans indices 0-9, saving a photo from every camera that responds.
+Then tests each camera defined in config.toml with its configured settings.
 
 Usage:
     uv run utils/test_cameras.py
@@ -19,6 +19,7 @@ from lib.config import get_camera_config
 from lib.config import load_config
 
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs" / "camera_test"
+MAX_INDEX = 10
 
 
 def center_crop(frame, target_w: int, target_h: int):
@@ -29,16 +30,46 @@ def center_crop(frame, target_w: int, target_h: int):
     return frame[y : y + target_h, x : x + target_w]
 
 
+def scan_all_indices() -> None:
+    """Try every index 0..MAX_INDEX, save a photo from each that works."""
+    print(f"=== Scanning camera indices 0-{MAX_INDEX - 1} ===\n")
+    found = 0
+    for idx in range(MAX_INDEX):
+        cap = cv2.VideoCapture(idx)
+        if not cap.isOpened():
+            cap.release()
+            continue
+        ret, frame = cap.read()
+        cap.release()
+        if not ret:
+            print(f"  index {idx}: opened but failed to read frame")
+            continue
+        h, w = frame.shape[:2]
+        out_path = OUTPUT_DIR / f"index_{idx}.png"
+        cv2.imwrite(str(out_path), frame)
+        print(f"  index {idx}: {w}x{h} -> {out_path}")
+        found += 1
+    if found == 0:
+        print("  No cameras found at any index!")
+    print()
+
+
 def main() -> None:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Saving photos to {OUTPUT_DIR}\n")
+
+    # Always scan all indices first
+    scan_all_indices()
+
+    # Then test configured cameras
     config = load_config()
     cameras = get_camera_config(config)
 
     if not cameras:
         print("No cameras configured in config.toml")
-        sys.exit(1)
+        sys.exit(0)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"Saving photos to {OUTPUT_DIR}\n")
+    print("=== Testing configured cameras ===\n")
 
     for name, cam in cameras.items():
         path = cam["path"]

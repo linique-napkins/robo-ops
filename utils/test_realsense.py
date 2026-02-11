@@ -119,6 +119,12 @@ def main() -> None:
             print(f"    {p['stream']} {p['w']}x{p['h']} @ {p['fps']}fps ({p['format']})")
 
     # --- Configure and start pipeline ---
+    usb_type = dev_info.get("usb_type_descriptor", "3")
+    if usb_type.startswith("2"):
+        print(f"\nERROR: RealSense D435I is on USB {usb_type} — streaming requires USB 3.0+.")
+        print("Please plug it into a USB 3.0 port (blue insert / marked 'SS').")
+        sys.exit(1)
+
     pipeline = rs.pipeline()
     config = rs.config()
     config.enable_device(serial)

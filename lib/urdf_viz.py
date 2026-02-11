@@ -587,12 +587,7 @@ def init_rerun_with_urdf(
     if ip and port:
         rr.connect_grpc(url=f"rerun+http://{ip}:{port}/proxy")
     else:
-        # Try to connect to existing viewer first, spawn if not available
-        try:
-            rr.connect_grpc(url="rerun+http://127.0.0.1:9876/proxy")
-        except Exception:
-            # No existing viewer, spawn a new one
-            rr.spawn(memory_limit=memory_limit)
+        rr.spawn(memory_limit=memory_limit)
 
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
 

@@ -38,6 +38,8 @@ from lib.config import validate_config
 from lib.robots import get_bimanual_follower
 from lib.robots import get_bimanual_leader
 from lib.urdf_viz import init_rerun_with_urdf
+from lib.urdf_viz import log_camera_images
+from lib.urdf_viz import log_urdf_state
 from lib.urdf_viz import save_rrd
 
 app = typer.Typer()
@@ -254,8 +256,6 @@ def main(  # noqa: PLR0912
         listener, events = init_keyboard_listener()
         if display:
             urdf_cfg = get_urdf_config(config)
-            # Initialize rerun with URDF - visualizer is stored globally and used
-            # by log_rerun_data via log_urdf_state callback
             init_rerun_with_urdf(
                 session_name="recording",
                 urdf_path=urdf_cfg["path"],
@@ -265,6 +265,19 @@ def main(  # noqa: PLR0912
                 right_rotation_deg=urdf_cfg["right_rotation"],
                 camera_names=list(cameras_cfg.keys()),
             )
+
+            # Patch record_loop's log function to also feed URDF viz + camera views
+            import lerobot.scripts.lerobot_record as _record_mod  # noqa: PLC0415
+
+            _orig_log = _record_mod.log_rerun_data
+
+            def _patched_log(observation=None, action=None, **kwargs):
+                _orig_log(observation=observation, action=action, **kwargs)
+                if observation:
+                    log_urdf_state(observation)
+                    log_camera_images(observation)
+
+            _record_mod.log_rerun_data = _patched_log
 
         typer.echo("\n=== Starting Recording ===")
         typer.echo("Controls:")
