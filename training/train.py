@@ -92,7 +92,7 @@ def get_training_config(config: dict) -> dict:
 @app.command()
 def main(  # noqa: PLR0912
     push_to_hub: bool = typer.Option(
-        True,
+        False,
         "--push/--no-push",
         help="Push trained model to HuggingFace Hub",
     ),

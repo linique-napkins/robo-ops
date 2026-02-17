@@ -525,20 +525,12 @@ def get_rrd_path(session_name: str) -> Path:
 
 
 def save_rrd() -> Path | None:
-    """Save the current Rerun session to an .rrd file.
+    """Return the path to the .rrd file being written.
 
-    Returns:
-        Path to the saved .rrd file, or None if no session is active.
+    The file sink is set up in init_rerun_with_urdf() so data is written
+    continuously. This just returns the path for display purposes.
     """
-    if _global_rrd_path is None:
-        return None
-
-    try:
-        rr.save(_global_rrd_path)
-        return _global_rrd_path
-    except Exception as e:
-        print(f"Warning: Failed to save .rrd file: {e}")
-        return None
+    return _global_rrd_path
 
 
 def init_rerun_with_urdf(
@@ -582,6 +574,11 @@ def init_rerun_with_urdf(
 
     # Use recording_id so multiple sessions show up in the same viewer
     rr.init(session_name, recording_id=str(_global_rrd_path.stem))
+
+    # Save to file first — must be called before logging any data.
+    # Data will be written to both the file and the viewer simultaneously.
+    rr.save(_global_rrd_path)
+
     memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
 
     if ip and port:

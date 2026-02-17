@@ -103,6 +103,7 @@ def get_recording_config(config: dict) -> dict:
         "num_episodes": recording.get("num_episodes", 50),
         "episode_time": recording.get("episode_time", 60),
         "reset_time": recording.get("reset_time", 10),
+        "idle_timeout": recording.get("idle_timeout", 4),
     }
 
 

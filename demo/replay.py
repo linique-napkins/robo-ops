@@ -9,6 +9,7 @@ Usage:
     uv run demo/replay.py -i my_movement         # Replay demo/recordings/my_movement.json
     uv run demo/replay.py --loop                  # Loop forever
     uv run demo/replay.py --speed 0.5             # Half speed
+    uv run demo/replay.py --hold                  # Hold torque at end position
 """
 
 import json
@@ -33,9 +34,10 @@ RECORDINGS_DIR = Path(__file__).parent / "recordings"
 
 @app.command()
 def main(
-    input_name: str = typer.Option("demo", "-i", "--input", help="Recording name to replay"),
+    input_name: str = typer.Option("linique_unfold_3", "-i", "--input", help="Recording name to replay"),
     speed: float = typer.Option(1.0, "--speed", "-s", help="Playback speed multiplier"),
     loop: bool = typer.Option(False, "--loop/--no-loop", help="Loop playback"),
+    hold: bool = typer.Option(False, "--hold/--no-hold", help="Hold torque at end position"),
 ) -> None:
     """Replay a recorded demo movement on the follower arms."""
     in_path = RECORDINGS_DIR / f"{input_name}.json"
@@ -86,6 +88,13 @@ def main(
 
     finally:
         if robot.is_connected:
+            if hold:
+                print("Holding torque. Press Ctrl+C to release and disconnect.")
+                try:
+                    while True:
+                        time.sleep(0.1)
+                except KeyboardInterrupt:
+                    print("\nReleasing.")
             robot.disconnect()
 
 

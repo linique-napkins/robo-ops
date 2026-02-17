@@ -14,6 +14,14 @@ If you are on mac,
 brew install ffmpeg
 ```
 
+On ubuntu:
+```bash
+sudo apt update
+sudo apt install -y ffmpeg \
+  libavcodec-dev libavformat-dev libavutil-dev \
+  libswresample-dev libswscale-dev
+```
+
 ## 2. Clone the repo
 
 Install repo into a directory on your laptop. 
@@ -56,12 +64,58 @@ This will detect all connected motor controllers, identify each arm by movement,
 
 ### Find cameras
 
-Take a test photo from each configured camera:
+Run the camera discovery script to assign stable device paths:
+```bash
+uv run utils/find_cameras.py
+```
+
+This opens each camera one at a time with a live preview so you can identify it, then assigns it a role (left / right / top) and updates `config.toml` with a stable `/dev/v4l/by-path/` path that won't change across reboots.
+
+> **Note:** The Innomaker U20CAM cameras all ship with the same serial number (`SN0001`), so `/dev/v4l/by-id/` can only create one symlink for all of them. The script uses `/dev/v4l/by-path/` instead, which identifies cameras by physical USB port. This means paths are stable as long as cameras stay plugged into the same ports.
+
+On Linux, USB 2.0 cameras sharing a bus need `fourcc = "MJPG"` in config to avoid bandwidth saturation.
+
+To just take a test photo from each configured camera:
 ```bash
 uv run utils/test_cameras.py
 ```
 
-Photos are saved to `outputs/camera_test/`. Update the `[camera.*]` sections in `config.toml` with the correct device indices or paths. On Linux, USB 2.0 cameras sharing a bus need `fourcc = "MJPG"` to avoid bandwidth issues.
+### Camera exposure / focus (Logitech Brio)
+
+Install `v4l-utils` if not already installed:
+```bash
+sudo apt install v4l-utils
+```
+
+Find your camera:
+```bash
+v4l2-ctl --list-devices
+```
+
+Disable all auto-brightening and set manual exposure:
+```bash
+# Switch to manual exposure
+v4l2-ctl -d /dev/video0 --set-ctrl=auto_exposure=1
+
+# Disable auto-brightening helpers
+v4l2-ctl -d /dev/video0 --set-ctrl=backlight_compensation=0
+v4l2-ctl -d /dev/video0 --set-ctrl=exposure_dynamic_framerate=0
+
+# Tune exposure (range 3-2047, lower = darker)
+v4l2-ctl -d /dev/video0 --set-ctrl=exposure_time_absolute=30
+
+# Tune brightness (range 0-255)
+v4l2-ctl -d /dev/video0 --set-ctrl=brightness=90
+
+# Disable autofocus (0=infinity, 255=closest)
+v4l2-ctl -d /dev/video0 --set-ctrl=focus_automatic_continuous=0
+v4l2-ctl -d /dev/video0 --set-ctrl=focus_absolute=0
+```
+
+List all available controls with:
+```bash
+v4l2-ctl -d /dev/video0 --list-ctrls
+```
 
 ### 3.5. Configure the devices
 
@@ -162,6 +216,7 @@ Press `q` to stop inference.
 │   ├── calibrate.py      # Arm calibration
 │   └── motor_setup.py    # Motor configuration
 ├── utils/
+│   ├── find_cameras.py   # Camera discovery & stable path assignment
 │   ├── find_motors.py    # Motor port discovery
 │   ├── health.py         # Motor health check
 │   ├── test_cameras.py   # Camera test photos

@@ -8,9 +8,15 @@ Usage:
     uv run data_taking/record.py
 """
 
+import os
 import shutil
 import sys
+import time
 from pathlib import Path
+
+# Suppress noisy library logs before imports trigger them
+os.environ.setdefault("SVT_LOG", "1")  # SVT-AV1: only warnings+errors (not info spam)
+os.environ.setdefault("RUST_LOG", "warn")  # Rerun: only warnings+errors
 
 # Add project root to path for lib imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -47,6 +53,135 @@ app = typer.Typer()
 # Local config for this module
 LOCAL_CONFIG_PATH = Path(__file__).parent / "config.toml"
 
+# Joint position change threshold (degrees/frame) below which arms are considered idle
+IDLE_THRESHOLD = 0.15
+
+# stderr fd backup for suppressing native C library noise
+_stderr_backup_fd: int | None = None
+_devnull_fd: int | None = None
+
+
+def _suppress_native_logs() -> None:
+    """Redirect stderr at the fd level to suppress libjpeg/ffmpeg C library noise.
+
+    These libraries (libjpeg "Corrupt JPEG data", ffmpeg "[mp4 @]") print directly
+    to stderr from C code, bypassing Python's logging entirely.
+    """
+    global _stderr_backup_fd, _devnull_fd  # noqa: PLW0603
+    _stderr_backup_fd = os.dup(2)
+    _devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(_devnull_fd, 2)
+
+
+def _restore_stderr() -> None:
+    """Restore stderr so Python errors/tracebacks are visible again."""
+    global _stderr_backup_fd, _devnull_fd  # noqa: PLW0603
+    if _stderr_backup_fd is not None:
+        os.dup2(_stderr_backup_fd, 2)
+        os.close(_stderr_backup_fd)
+        _stderr_backup_fd = None
+    if _devnull_fd is not None:
+        os.close(_devnull_fd)
+        _devnull_fd = None
+
+
+def _log_banner(msg: str) -> None:
+    """Print a highly visible banner to stdout."""
+    width = max(len(msg) + 4, 60)
+    bar = "=" * width
+    typer.echo(f"\n{bar}")
+    typer.echo(f"  {msg}")
+    typer.echo(f"{bar}\n")
+
+
+def _countdown(
+    reset_time: float,
+    robot,
+    events: dict,
+    fps: int,
+    teleop,
+    display: bool,
+    teleop_action_processor,
+    robot_action_processor,
+    robot_observation_processor,
+    task: str,
+) -> None:
+    """Run the reset record_loop with a countdown timer on a single line."""
+    import threading  # noqa: PLC0415
+
+    stop_event = threading.Event()
+    countdown_seconds = int(reset_time)
+
+    def _print_countdown() -> None:
+        remaining = countdown_seconds
+        while remaining > 0 and not stop_event.is_set():
+            print(f"\r  Reset: {remaining}s remaining...  ", end="", flush=True)
+            stop_event.wait(timeout=1.0)
+            remaining -= 1
+        print("\r  Reset: done!                  ", flush=True)
+
+    countdown_thread = threading.Thread(target=_print_countdown, daemon=True)
+    countdown_thread.start()
+
+    record_loop(
+        robot=robot,
+        events=events,
+        fps=fps,
+        teleop_action_processor=teleop_action_processor,
+        robot_action_processor=robot_action_processor,
+        robot_observation_processor=robot_observation_processor,
+        teleop=teleop,
+        control_time_s=reset_time,
+        single_task=task,
+        display_data=display,
+    )
+
+    stop_event.set()
+    countdown_thread.join()
+
+
+class IdleDetector:
+    """Detects when robot arms stop moving and triggers early exit."""
+
+    def __init__(self, timeout: float, events: dict) -> None:
+        self.timeout = timeout
+        self.events = events
+        self.enabled = False
+        self._prev_positions: dict[str, float] = {}
+        self._last_movement_time: float = 0.0
+
+    def reset(self) -> None:
+        self._prev_positions.clear()
+        self._last_movement_time = time.monotonic()
+
+    def update(self, observation: dict) -> None:
+        if not self.enabled or self.timeout <= 0:
+            return
+
+        now = time.monotonic()
+        moved = False
+
+        for key, value in observation.items():
+            if not key.endswith(".pos"):
+                continue
+            if not isinstance(value, (int, float)):
+                continue
+            if (
+                key in self._prev_positions
+                and abs(value - self._prev_positions[key]) > IDLE_THRESHOLD
+            ):
+                moved = True
+            self._prev_positions[key] = value
+
+        if moved or not self._prev_positions:
+            self._last_movement_time = now
+            return
+
+        idle_duration = now - self._last_movement_time
+        if idle_duration >= self.timeout:
+            log_say("No movement detected. Ending episode.", play_sounds=True)
+            self.events["exit_early"] = True
+
 
 def print_config(config: dict, recording_cfg: dict) -> None:
     """Print configuration summary."""
@@ -66,6 +201,8 @@ def print_config(config: dict, recording_cfg: dict) -> None:
     typer.echo(f"  Episodes:       {recording_cfg['num_episodes']}")
     typer.echo(f"  Episode time:   {recording_cfg['episode_time']}s")
     typer.echo(f"  Reset time:     {recording_cfg['reset_time']}s")
+    idle = recording_cfg["idle_timeout"]
+    typer.echo(f"  Idle timeout:   {idle}s" if idle > 0 else "  Idle timeout:   disabled")
 
 
 def is_valid_local_dataset(local_path: Path) -> bool:
@@ -158,6 +295,11 @@ def main(  # noqa: PLR0912
     ),
 ) -> None:
     """Record teleoperation data from bimanual SO101 robot arms with a camera."""
+    # TODO: Fix JPEG corruption — Innomaker cameras share USB 2.0 bus with motor
+    # controllers, causing MJPG frame truncation under load. Move cameras to a
+    # separate USB controller (Bus 002) to resolve. Warnings suppressed for now.
+    _suppress_native_logs()
+
     typer.echo("\n=== Bimanual Data Collection ===\n")
 
     # Load global config for hardware settings
@@ -177,6 +319,7 @@ def main(  # noqa: PLR0912
     num_episodes = recording_cfg["num_episodes"]
     episode_time = recording_cfg["episode_time"]
     reset_time = recording_cfg["reset_time"]
+    idle_timeout = recording_cfg["idle_timeout"]
 
     print_config(config, recording_cfg)
 
@@ -254,6 +397,18 @@ def main(  # noqa: PLR0912
 
         # Initialize keyboard listener and visualization
         listener, events = init_keyboard_listener()
+
+        # Set up idle detection
+        idle_detector: IdleDetector | None = None
+        if idle_timeout > 0:
+            if not display:
+                typer.echo(
+                    "Warning: idle detection requires --display to monitor joint positions. "
+                    "Idle auto-stop is disabled."
+                )
+            else:
+                idle_detector = IdleDetector(timeout=idle_timeout, events=events)
+
         if display:
             urdf_cfg = get_urdf_config(config)
             init_rerun_with_urdf(
@@ -276,14 +431,16 @@ def main(  # noqa: PLR0912
                 if observation:
                     log_urdf_state(observation)
                     log_camera_images(observation)
+                    if idle_detector:
+                        idle_detector.update(observation)
 
             _record_mod.log_rerun_data = _patched_log
 
         typer.echo("\n=== Starting Recording ===")
         typer.echo("Controls:")
-        typer.echo("  - Press 'q' to stop recording")
-        typer.echo("  - Press 'r' to re-record current episode")
-        typer.echo("  - Press 'e' to exit current episode early\n")
+        typer.echo("  - Right Arrow: exit current episode early")
+        typer.echo("  - Left Arrow:  re-record current episode")
+        typer.echo("  - ESC:         stop recording\n")
 
         log_say("Ready to record. Press any key on the leader arms to begin.", play_sounds=True)
 
@@ -292,10 +449,19 @@ def main(  # noqa: PLR0912
             while recorded_episodes < num_episodes and not events["stop_recording"]:
                 episode_num = dataset.num_episodes
                 remaining = num_episodes - recorded_episodes
+
+                _log_banner(f"RECORDING  Episode {episode_num}  ({remaining} remaining)")
                 log_say(
                     f"Recording episode {episode_num}. {remaining} episodes remaining.",
                     play_sounds=True,
                 )
+
+                # Enable idle detection for the episode
+                if idle_detector:
+                    idle_detector.reset()
+                    idle_detector.enabled = True
+
+                episode_start = time.monotonic()
 
                 record_loop(
                     robot=robot,
@@ -311,8 +477,15 @@ def main(  # noqa: PLR0912
                     display_data=display,
                 )
 
+                episode_duration = time.monotonic() - episode_start
+
+                # Disable idle detection during save/reset
+                if idle_detector:
+                    idle_detector.enabled = False
+
                 # Check for re-record before saving
                 if events["rerecord_episode"]:
+                    _log_banner("DISCARDED  Re-recording episode")
                     log_say("Discarding episode. Try again.", play_sounds=True)
                     events["rerecord_episode"] = False
                     events["exit_early"] = False
@@ -320,9 +493,22 @@ def main(  # noqa: PLR0912
                     continue
 
                 # Save the episode
+                _log_banner(f"SAVING  Episode {episode_num}  ({episode_duration:.1f}s recorded)")
+                save_start = time.monotonic()
                 dataset.save_episode()
+                save_duration = time.monotonic() - save_start
                 recorded_episodes += 1
-                log_say(f"Episode {episode_num} saved.", play_sounds=True)
+                remaining = num_episodes - recorded_episodes
+
+                _log_banner(
+                    f"SAVED  Episode {episode_num}  "
+                    f"({episode_duration:.1f}s recorded, {save_duration:.1f}s to save, "
+                    f"{remaining} remaining)"
+                )
+                log_say(
+                    f"Episode {episode_num} saved. {remaining} remaining.",
+                    play_sounds=True,
+                )
 
                 # Reset environment (skip for last episode)
                 if not events["stop_recording"] and recorded_episodes < num_episodes:
@@ -330,19 +516,20 @@ def main(  # noqa: PLR0912
                         f"Reset the environment. {reset_time} seconds.",
                         play_sounds=True,
                     )
-                    record_loop(
-                        robot=robot,
-                        events=events,
-                        fps=fps,
-                        teleop_action_processor=teleop_action_processor,
-                        robot_action_processor=robot_action_processor,
-                        robot_observation_processor=robot_observation_processor,
-                        teleop=teleop,
-                        control_time_s=reset_time,
-                        single_task=task,
-                        display_data=display,
+                    _countdown(
+                        reset_time,
+                        robot,
+                        events,
+                        fps,
+                        teleop,
+                        display,
+                        teleop_action_processor,
+                        robot_action_processor,
+                        robot_observation_processor,
+                        task,
                     )
 
+        _log_banner(f"DONE  {recorded_episodes} episodes collected")
         log_say(
             f"Recording complete. {recorded_episodes} episodes collected.",
             play_sounds=True,
@@ -350,6 +537,8 @@ def main(  # noqa: PLR0912
         )
 
     finally:
+        _restore_stderr()
+
         if dataset:
             dataset.finalize()
 

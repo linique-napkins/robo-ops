@@ -1,17 +1,17 @@
 # Inference Configuration
 
 [inference]
-# Trained policy to load (HuggingFace repo ID)
-policy_repo_id = "jhimmens/linique-act"
+# Trained policy to load (HuggingFace repo ID or local path)
+policy_repo_id = "data/outputs/jhimmens_linique-act/checkpoint-1876-interrupted"
 
 # Dataset used for training (needed for feature definitions)
 dataset_repo_id = "jhimmens/linique"
 
 # Task description (should match training)
-task = "folding"
+task = "pickup"
 
 # Device (cuda, mps, cpu)
-device = "mps"
+device = "cuda"
 
 # Control frequency
 fps = 30

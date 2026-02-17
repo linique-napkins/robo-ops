@@ -20,6 +20,7 @@ uv run data_taking/record.py               # Record episodes
 uv run training/train.py                   # Train ACT policy
 uv run inference/run.py                    # Run policy on robot
 
+uv run utils/find_cameras.py               # Discover cameras & assign stable paths
 uv run utils/test_urdf_viz.py              # Test URDF visualization
 uv run utils/test_realsense.py             # Test RealSense camera
 ```
