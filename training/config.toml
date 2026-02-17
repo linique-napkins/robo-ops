@@ -24,6 +24,11 @@ dim_model = 512        # Transformer hidden dimension
 n_heads = 8            # Number of attention heads
 n_encoder_layers = 4   # Number of transformer encoder layers
 
+# Output directory for checkpoints and final model
+# Leave empty to use default (data/outputs/ in project root)
+# On HPC, set to a writable scratch path
+# output_dir = "/scratch/st-engineeringphysics-1/$USER/training_outputs"
+
 # Checkpointing
 save_freq = 10000      # Save checkpoint every N steps
 log_freq = 100         # Log metrics every N steps

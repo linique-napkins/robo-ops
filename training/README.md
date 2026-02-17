@@ -2,6 +2,19 @@
 
 ACT policy training for bimanual SO101 robot, targeting UBC ARC Sockeye HPC cluster.
 
+# ARC
+
+```bash 
+# Dry run — validates SBATCH config, no GPU time used                 
+sbatch --test-only training/arc_train.sh
+                                                                                                                                                                                                                    
+# Real test — 5 training steps, 15 min wall time, minimal allocation burn  
+TRAIN_STEPS=5 sbatch --time=0:15:00 training/arc_train.sh
+
+# full training
+sbatch training/arc_train.sh
+``` 
+
 ## Quick Reference
 
 ```bash

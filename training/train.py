@@ -63,6 +63,7 @@ def print_training_config(training_cfg: dict) -> None:
     typer.echo(f"  Learning rate:  {training_cfg['learning_rate']}")
     typer.echo(f"  Device:         {training_cfg['device']}")
     typer.echo(f"  Chunk size:     {training_cfg['chunk_size']}")
+    typer.echo(f"  Output dir:     {training_cfg['output_dir'] or 'default (data/outputs/)'}")
     typer.echo(f"  Save freq:      every {training_cfg['save_freq']} steps")
     typer.echo(f"  Log freq:       every {training_cfg['log_freq']} steps")
 
@@ -82,6 +83,7 @@ def get_training_config(config: dict) -> dict:
         "dim_model": training.get("dim_model", 512),
         "n_heads": training.get("n_heads", 8),
         "n_encoder_layers": training.get("n_encoder_layers", 4),
+        "output_dir": training.get("output_dir"),
         "save_freq": training.get("save_freq", 10000),
         "log_freq": training.get("log_freq", 100),
         "wandb_project": training.get("wandb_project", "linique-robot"),
@@ -106,6 +108,21 @@ def main(  # noqa: PLR0912
         "--resume",
         help="Resume a previous wandb run by ID",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Skip confirmation prompts (for batch/SLURM jobs)",
+    ),
+    output_dir_override: str = typer.Option(
+        None,
+        "--output-dir",
+        help="Override output directory for checkpoints (e.g. scratch on HPC)",
+    ),
+    steps_override: int = typer.Option(
+        None,
+        "--steps",
+        help="Override training steps (e.g. --steps 5 for a quick test)",
+    ),
 ) -> None:
     """Train ACT policy on recorded robot data."""
     typer.echo("\n=== ACT Policy Training ===\n")
@@ -116,7 +133,7 @@ def main(  # noqa: PLR0912
 
     print_training_config(training_cfg)
 
-    if not typer.confirm("\nProceed with training?"):
+    if not yes and not typer.confirm("\nProceed with training?"):
         typer.echo("Training cancelled.")
         raise typer.Exit(0)
 
@@ -193,8 +210,13 @@ def main(  # noqa: PLR0912
         num_workers=4,
     )
 
-    # Setup output directory (in data/outputs/)
-    output_dir = OUTPUTS_DIR / training_cfg["output_repo_id"].replace("/", "_")
+    # Setup output directory: CLI flag > config > default (data/outputs/)
+    if output_dir_override:
+        output_dir = Path(output_dir_override).expanduser()
+    elif training_cfg["output_dir"]:
+        output_dir = Path(training_cfg["output_dir"]).expanduser()
+    else:
+        output_dir = OUTPUTS_DIR / training_cfg["output_repo_id"].replace("/", "_")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize wandb
@@ -234,7 +256,7 @@ def main(  # noqa: PLR0912
 
     # Training loop
     typer.echo("\n=== Starting Training ===\n")
-    training_steps = training_cfg["steps"]
+    training_steps = steps_override or training_cfg["steps"]
     log_freq = training_cfg["log_freq"]
     save_freq = training_cfg["save_freq"]
 
@@ -304,7 +326,7 @@ def main(  # noqa: PLR0912
 
     except KeyboardInterrupt:
         typer.echo("\n\nTraining interrupted by user.")
-        if typer.confirm("Save current checkpoint before exiting?"):
+        if yes or typer.confirm("Save current checkpoint before exiting?"):
             checkpoint_dir = output_dir / f"checkpoint-{step}-interrupted"
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
             policy.save_pretrained(checkpoint_dir)
