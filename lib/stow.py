@@ -17,11 +17,11 @@ JOINT_NAMES = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wri
 # Defaults if not specified in config.toml
 DEFAULT_STOW_POSITION = {
     "shoulder_pan": 0.0,
-    "shoulder_lift": 0.0,
-    "elbow_flex": 0.0,
-    "wrist_flex": 0.0,
+    "shoulder_lift": -99.0,
+    "elbow_flex": 99.0,
+    "wrist_flex": -99.0,
     "wrist_roll": 0.0,
-    "gripper": 100.0,
+    "gripper": 80.0,
 }
 DEFAULT_STEPS = 50
 DEFAULT_FPS = 30
