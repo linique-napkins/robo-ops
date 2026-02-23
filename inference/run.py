@@ -70,6 +70,7 @@ def get_inference_config(config: dict) -> dict:
         "task": inference["task"],
         "fps": inference["fps"],
         "display": inference["display"],
+        "temporal_ensemble_coeff": inference.get("temporal_ensemble_coeff"),
     }
 
 
@@ -84,6 +85,8 @@ def print_inference_config(config: dict, inference_cfg: dict) -> None:
     typer.echo(f"  Device:         {inference_cfg['device']}")
     typer.echo(f"  FPS:            {inference_cfg['fps']}")
     typer.echo(f"  Display:        {inference_cfg['display']}")
+    te_coeff = inference_cfg["temporal_ensemble_coeff"]
+    typer.echo(f"  Temporal Ens.:  {te_coeff if te_coeff is not None else 'disabled'}")
     typer.echo("\nHardware Configuration:")
     typer.echo(f"  Left Follower:  {config['follower']['left']['port']}")
     typer.echo(f"  Right Follower: {config['follower']['right']['port']}")
@@ -133,6 +136,14 @@ def main(
     typer.echo(f"\nLoading policy from: {inference_cfg['policy_repo_id']}")
     policy_cfg = PreTrainedConfig.from_pretrained(inference_cfg["policy_repo_id"])
     policy_cfg.pretrained_path = inference_cfg["policy_repo_id"]
+
+    # Enable temporal ensembling for smoother actions across chunk boundaries.
+    # Requires n_action_steps=1 so the policy runs every step.
+    temporal_ensemble_coeff = inference_cfg["temporal_ensemble_coeff"]
+    if temporal_ensemble_coeff is not None:
+        typer.echo(f"  Temporal ensembling enabled (coeff={temporal_ensemble_coeff})")
+        policy_cfg.temporal_ensemble_coeff = temporal_ensemble_coeff
+        policy_cfg.n_action_steps = 1
 
     # Load dataset for features (needed to build observation frames)
     # Uses local data/datasets/ path, falling back to HuggingFace Hub download
