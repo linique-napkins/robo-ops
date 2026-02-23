@@ -23,6 +23,7 @@ sbatch training/arc_train.sh                          # full training
 
 squeue -u $USER                                       # check job status
 tail -f /scratch/ss-engineeringphysics-1/$USER/training_outputs/output-<jobid>.txt
+scontrol show job <jobid>
 
 # ── After training (on Sockeye login node) ──────────────────
 # Sync wandb offline runs to cloud
