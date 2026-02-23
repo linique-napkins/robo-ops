@@ -36,6 +36,7 @@ from lib.config import get_urdf_config
 from lib.config import load_config
 from lib.config import validate_config
 from lib.robots import get_bimanual_follower
+from lib.stow import stow_and_disconnect
 from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_observation_and_action
 
@@ -264,9 +265,7 @@ def main(
         if listener:
             listener.stop()
 
-        if robot.is_connected:
-            typer.echo("Disconnecting robot...")
-            robot.disconnect()
+        stow_and_disconnect(robot, config)
 
     total_time = time.time() - start_time
     typer.echo(f"\nInference complete. Ran for {total_time:.1f}s ({step} steps)")

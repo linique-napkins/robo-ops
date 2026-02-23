@@ -1,0 +1,111 @@
+"""
+Graceful robot stow on shutdown.
+
+Moves follower arms to a safe stowed position before disconnecting,
+preventing gravity-induced collapse onto the table.
+"""
+
+import time
+
+from lerobot.utils.robot_utils import precise_sleep
+
+from lib.config import load_config
+
+# Joint names (without arm prefix)
+JOINT_NAMES = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+
+# Defaults if not specified in config.toml
+DEFAULT_STOW_POSITION = {
+    "shoulder_pan": 0.0,
+    "shoulder_lift": 0.0,
+    "elbow_flex": 0.0,
+    "wrist_flex": 0.0,
+    "wrist_roll": 0.0,
+    "gripper": 100.0,
+}
+DEFAULT_STEPS = 50
+DEFAULT_FPS = 30
+
+
+def _get_stow_config(config: dict | None) -> tuple[dict[str, float], int, int]:
+    """Extract stow parameters from config, falling back to defaults."""
+    if config is None:
+        config = load_config()
+
+    stow = config.get("stow", {})
+    steps = stow.get("steps", DEFAULT_STEPS)
+    fps = stow.get("fps", DEFAULT_FPS)
+
+    position = dict(DEFAULT_STOW_POSITION)
+    position.update(stow.get("position", {}))
+
+    return position, steps, fps
+
+
+def _is_bimanual(robot) -> bool:
+    """Check if robot is a BiSOFollower (has left/right arm prefixes)."""
+    obs = robot.get_observation()
+    return any(k.startswith("left_") for k in obs)
+
+
+def _build_action_keys(bimanual: bool) -> list[str]:
+    """Build the full list of action keys for the robot."""
+    if bimanual:
+        return [f"{prefix}{joint}.pos" for prefix in ("left_", "right_") for joint in JOINT_NAMES]
+    return [f"{joint}.pos" for joint in JOINT_NAMES]
+
+
+def stow_and_disconnect(robot, config: dict | None = None) -> None:
+    """Move robot arms to stow position, then disconnect.
+
+    Works with both BiSOFollower (bimanual) and SOFollower (single arm).
+    If stow fails for any reason, falls through to disconnect anyway.
+
+    Args:
+        robot: Connected robot instance (BiSOFollower or SOFollower).
+        config: Global config dict. If None, loads from default config.toml.
+    """
+    if not robot.is_connected:
+        return
+
+    try:
+        position, steps, fps = _get_stow_config(config)
+        bimanual = _is_bimanual(robot)
+        action_keys = _build_action_keys(bimanual)
+
+        # Read current positions
+        obs = robot.get_observation()
+        current = {}
+        for key in action_keys:
+            current[key] = obs.get(key, 0.0)
+
+        # Build target positions
+        target = {}
+        for key in action_keys:
+            # Strip prefix and .pos suffix to get bare joint name
+            bare = key.replace("left_", "").replace("right_", "").replace(".pos", "")
+            target[key] = position[bare]
+
+        print("Stowing robot...")
+
+        # Interpolate from current to target
+        for step in range(1, steps + 1):
+            loop_start = time.perf_counter()
+            alpha = step / steps
+
+            waypoint = {}
+            for key in action_keys:
+                waypoint[key] = current[key] + alpha * (target[key] - current[key])
+
+            robot.send_action(waypoint)
+
+            dt_s = time.perf_counter() - loop_start
+            precise_sleep(max(1 / fps - dt_s, 0.0))
+
+        print("Stow complete.")
+
+    except Exception as e:
+        print(f"Warning: stow failed ({e}), disconnecting anyway.")
+
+    print("Disconnecting robot...")
+    robot.disconnect()

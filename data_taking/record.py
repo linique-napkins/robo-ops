@@ -43,6 +43,7 @@ from lib.config import load_config
 from lib.config import validate_config
 from lib.robots import get_bimanual_follower
 from lib.robots import get_bimanual_leader
+from lib.stow import stow_and_disconnect
 from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_camera_images
 from lib.urdf_viz import log_urdf_state
@@ -542,13 +543,11 @@ def main(  # noqa: PLR0912
         if dataset:
             dataset.finalize()
 
-        if robot.is_connected:
-            typer.echo("Disconnecting robot...")
-            robot.disconnect()
-
         if teleop.is_connected:
             typer.echo("Disconnecting teleoperator...")
             teleop.disconnect()
+
+        stow_and_disconnect(robot, config)
 
         if listener:
             listener.stop()

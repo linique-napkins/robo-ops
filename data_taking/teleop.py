@@ -24,6 +24,7 @@ from lib.config import load_config
 from lib.config import validate_config
 from lib.robots import get_bimanual_follower
 from lib.robots import get_bimanual_leader
+from lib.stow import stow_and_disconnect
 from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_observation_and_action
 from lib.urdf_viz import save_rrd
@@ -181,9 +182,7 @@ def main() -> None:  # noqa: PLR0912
         if teleop.is_connected:
             print("Disconnecting teleoperator...")
             teleop.disconnect()
-        if robot.is_connected:
-            print("Disconnecting robot...")
-            robot.disconnect()
+        stow_and_disconnect(robot, config)
 
         # Save Rerun recording
         if args.display:

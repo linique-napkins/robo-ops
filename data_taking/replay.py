@@ -26,6 +26,7 @@ from lib.config import get_recording_config
 from lib.config import get_urdf_config
 from lib.config import load_config
 from lib.robots import get_bimanual_follower
+from lib.stow import stow_and_disconnect
 from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_dataset_images
 from lib.urdf_viz import log_observation_and_action
@@ -223,9 +224,8 @@ def main(  # noqa: PLR0912
         log_say("Replay complete", play_sounds, blocking=True)
 
     finally:
-        if robot and robot.is_connected:
-            typer.echo("Disconnecting robot...")
-            robot.disconnect()
+        if robot:
+            stow_and_disconnect(robot, config)
 
         # Save Rerun recording
         rrd_path = save_rrd()
