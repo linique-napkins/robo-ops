@@ -25,6 +25,7 @@ from lib.config import load_config
 from lib.config import validate_config
 from lib.robots import get_bimanual_follower
 from lib.robots import get_bimanual_leader
+from lib.stow import stow_and_disconnect
 
 app = typer.Typer()
 
@@ -77,8 +78,7 @@ def main(
     finally:
         if teleop.is_connected:
             teleop.disconnect()
-        if robot.is_connected:
-            robot.disconnect()
+        stow_and_disconnect(robot)
 
     if frames:
         recording = {"fps": fps, "frames": frames}

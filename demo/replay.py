@@ -26,6 +26,7 @@ from lerobot.utils.robot_utils import precise_sleep
 from lib.config import load_config
 from lib.config import validate_config
 from lib.robots import get_bimanual_follower
+from lib.stow import stow_and_disconnect
 
 app = typer.Typer()
 
@@ -89,13 +90,13 @@ def main(
     finally:
         if robot.is_connected:
             if hold:
-                print("Holding torque. Press Ctrl+C to release and disconnect.")
+                print("Holding torque. Press Ctrl+C to release and stow.")
                 try:
                     while True:
                         time.sleep(0.1)
                 except KeyboardInterrupt:
                     print("\nReleasing.")
-            robot.disconnect()
+            stow_and_disconnect(robot)
 
 
 if __name__ == "__main__":
