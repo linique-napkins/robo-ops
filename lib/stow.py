@@ -37,11 +37,11 @@ def _build_action_keys(bimanual: bool) -> list[str]:
     return [f"{joint}.pos" for joint in JOINT_NAMES]
 
 
-def stow_and_disconnect(robot) -> None:
-    """Move robot arms to stow position, then disconnect.
+def stow(robot) -> None:
+    """Move robot arms to stow position without disconnecting.
 
     Works with both BiSOFollower (bimanual) and SOFollower (single arm).
-    If stow fails for any reason, falls through to disconnect anyway.
+    If stow fails, prints a warning and returns.
 
     Args:
         robot: Connected robot instance (BiSOFollower or SOFollower).
@@ -85,7 +85,16 @@ def stow_and_disconnect(robot) -> None:
         print("Stow complete.")
 
     except Exception as e:
-        print(f"Warning: stow failed ({e}), disconnecting anyway.")
+        print(f"Warning: stow failed ({e}).")
 
-    print("Disconnecting robot...")
-    robot.disconnect()
+
+def stow_and_disconnect(robot) -> None:
+    """Move robot arms to stow position, then disconnect.
+
+    Args:
+        robot: Connected robot instance (BiSOFollower or SOFollower).
+    """
+    stow(robot)
+    if robot.is_connected:
+        print("Disconnecting robot...")
+        robot.disconnect()

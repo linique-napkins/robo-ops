@@ -43,6 +43,7 @@ from lib.config import load_config
 from lib.config import validate_config
 from lib.robots import get_bimanual_follower
 from lib.robots import get_bimanual_leader
+from lib.stow import stow
 from lib.stow import stow_and_disconnect
 from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_camera_images
@@ -492,6 +493,9 @@ def main(  # noqa: PLR0912
                     events["exit_early"] = False
                     dataset.clear_episode_buffer()
                     continue
+
+                # Stow arms to safe position while saving
+                stow(robot)
 
                 # Save the episode
                 _log_banner(f"SAVING  Episode {episode_num}  ({episode_duration:.1f}s recorded)")

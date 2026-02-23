@@ -18,6 +18,7 @@ from lib.robots import get_bimanual_follower
 from lib.robots import get_bimanual_leader
 from lib.robots import get_single_follower
 from lib.robots import get_single_leader
+from lib.stow import stow
 from lib.stow import stow_and_disconnect
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "get_single_follower",
     "get_single_leader",
     "load_config",
+    "stow",
     "stow_and_disconnect",
     "validate_config",
 ]
