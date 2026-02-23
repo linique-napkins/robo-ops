@@ -2,10 +2,19 @@
 
 ACT policy training for bimanual SO101 robot on UBC ARC Sockeye HPC cluster.
 
-## TLDR
+
+## If training on local
 
 ```bash
-# ── Upload (from local machine) ─────────────────────────────
+# Run inference locally
+uv run inference/run.py
+```
+
+## If training on sockeye
+
+### On your server (has internet)
+
+```bash
 # Sync dataset to Sockeye project storage
 rsync -avzP data/datasets/jhimmens/linique \
     jhimmens@dtn.sockeye.arc.ubc.ca:/arc/project/ss-engineeringphysics-1/2617-Napkin-Folding/datasets/
@@ -14,32 +23,39 @@ rsync -avzP data/datasets/jhimmens/linique \
 rsync -avzP --exclude data/ --exclude .venv/ --exclude wandb/ \
     . jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/robo-ops/
 
-# ── Train (on Sockeye login node) ───────────────────────────
+# Pull all training outputs (checkpoints + final model) back after training
+rsync -avzP jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/training_outputs/ \
+    data/outputs/jhimmens_linique-act/
+
+# Pull wandb offline runs and sync to cloud from here
+rsync -avzP jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/robo-ops/wandb/offline-run-* \
+    wandb/
+wandb sync wandb/offline-run-*
+```
+
+### On the Sockeye login node (has internet)
+
+```bash
 cd /scratch/ss-engineeringphysics-1/$USER/robo-ops
 
+# Pre-download ResNet weights (compute nodes have no internet)
+mkdir -p /scratch/ss-engineeringphysics-1/$USER/.cache/torch/hub/checkpoints
+wget -P /scratch/ss-engineeringphysics-1/$USER/.cache/torch/hub/checkpoints \
+    https://download.pytorch.org/models/resnet18-f37072fd.pth
+
+# Submit jobs
 sbatch --test-only training/arc_train.sh              # dry run
 TRAIN_STEPS=5 sbatch --time=0:15:00 training/arc_train.sh  # quick test
 sbatch training/arc_train.sh                          # full training
 
+# Monitor
 squeue -u $USER                                       # check job status
 tail -f /scratch/ss-engineeringphysics-1/$USER/training_outputs/output-<jobid>.txt
 scontrol show job <jobid>
 
-# ── After training (on Sockeye login node) ──────────────────
-# Sync wandb offline runs to cloud
-wandb sync /scratch/ss-engineeringphysics-1/$USER/robo-ops/wandb/offline-run-*
-
-# Copy checkpoints from scratch to project storage (scratch gets purged!)
+# After training: copy checkpoints from scratch to project storage (scratch gets purged!)
 cp -r /scratch/ss-engineeringphysics-1/$USER/training_outputs \
     /arc/project/ss-engineeringphysics-1/2617-Napkin-Folding/models/
-
-# ── Download (from local machine) ───────────────────────────
-# Pull trained model to local machine
-rsync -avzP jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/training_outputs/final \
-    data/outputs/jhimmens_linique-act/
-
-# Run inference locally
-uv run inference/run.py
 ```
 
 ---
@@ -61,11 +77,11 @@ uv run inference/run.py
 
 | Tier | Path | Quota | Purge | Compute Access |
 |------|------|-------|-------|----------------|
-| Home | `/home/$USER` | 50 GB | No | Read/Write |
+| Home | `/home/$USER` | 50 GB | No | **READ-ONLY** |
 | Project | `/arc/project/ss-engineeringphysics-1/2617-Napkin-Folding` | 5 TB | No | **READ-ONLY** |
 | Scratch | `/scratch/ss-engineeringphysics-1/$USER` | 5 TB | **Yes** | Read/Write |
 
-- **Project is read-only on compute nodes.** Dataset lives here, job reads via symlink. All output must go to scratch.
+- **Home and Project are read-only on compute nodes.** Compute nodes also have **no internet access**. All output must go to scratch, and any downloads (model weights, packages) must be done from the login node beforehand.
 - **Scratch gets purged.** Copy results to project storage after training.
 
 ---
