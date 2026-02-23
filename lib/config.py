@@ -45,7 +45,7 @@ def validate_config(config: dict) -> None:
 
 
 def get_camera_config(config: dict, camera_name: str | None = None) -> dict:
-    """Get camera configuration with defaults.
+    """Get camera configuration.
 
     Args:
         config: Full configuration dictionary.
@@ -55,31 +55,24 @@ def get_camera_config(config: dict, camera_name: str | None = None) -> dict:
     Returns:
         Single camera config dict if camera_name specified,
         otherwise dict of all camera configs keyed by name.
-    """
-    camera_section = config.get("camera", {})
 
-    # Default camera settings
-    defaults = {
-        "path": 0,
-        "width": 640,
-        "height": 480,
-        "fps": 30,
-        "fourcc": None,
-    }
+    Raises:
+        KeyError: If required camera fields are missing from config.
+    """
+    camera_section = config["camera"]
 
     def get_single_camera(cam_cfg: dict) -> dict:
         return {
-            "path": cam_cfg.get("path", defaults["path"]),
-            "width": cam_cfg.get("width", defaults["width"]),
-            "height": cam_cfg.get("height", defaults["height"]),
-            "fps": cam_cfg.get("fps", defaults["fps"]),
-            "fourcc": cam_cfg.get("fourcc", defaults["fourcc"]),
+            "path": cam_cfg["path"],
+            "width": cam_cfg["width"],
+            "height": cam_cfg["height"],
+            "fps": cam_cfg["fps"],
+            "fourcc": cam_cfg.get("fourcc"),
         }
 
     # If specific camera requested
     if camera_name:
-        cam_cfg = camera_section.get(camera_name, {})
-        return get_single_camera(cam_cfg)
+        return get_single_camera(camera_section[camera_name])
 
     # Return all cameras
     cameras = {}
@@ -87,35 +80,39 @@ def get_camera_config(config: dict, camera_name: str | None = None) -> dict:
         if name in camera_section:
             cameras[name] = get_single_camera(camera_section[name])
 
-    # Fallback for legacy single-camera config (backward compatibility)
-    if not cameras and "path" in camera_section:
-        cameras["top"] = get_single_camera(camera_section)
-
     return cameras
 
 
 def get_recording_config(config: dict) -> dict:
-    """Get recording configuration with defaults."""
-    recording = config.get("recording", {})
+    """Get recording configuration.
+
+    Raises:
+        KeyError: If [recording] section or required keys are missing.
+    """
+    recording = config["recording"]
     return {
-        "repo_id": recording.get("repo_id", "jhimmens/linique"),
-        "task": recording.get("task", "folding"),
-        "num_episodes": recording.get("num_episodes", 50),
-        "episode_time": recording.get("episode_time", 60),
-        "reset_time": recording.get("reset_time", 10),
-        "idle_timeout": recording.get("idle_timeout", 4),
+        "repo_id": recording["repo_id"],
+        "task": recording["task"],
+        "num_episodes": recording["num_episodes"],
+        "episode_time": recording["episode_time"],
+        "reset_time": recording["reset_time"],
+        "idle_timeout": recording["idle_timeout"],
     }
 
 
 def get_urdf_config(config: dict) -> dict:
-    """Get URDF visualization configuration with defaults."""
-    urdf = config.get("urdf", {})
+    """Get URDF visualization configuration.
+
+    Raises:
+        KeyError: If [urdf] section or required keys are missing.
+    """
+    urdf = config["urdf"]
     return {
-        "path": ROOT_DIR / urdf.get("path", "SO-ARM100/Simulation/SO101/so101_new_calib.urdf"),
-        "left_offset": tuple(urdf.get("left_offset", [-0.2, 0.0, 0.0])),
-        "right_offset": tuple(urdf.get("right_offset", [0.2, 0.0, 0.0])),
-        "left_rotation": urdf.get("left_rotation", 0.0),
-        "right_rotation": urdf.get("right_rotation", 0.0),
+        "path": ROOT_DIR / urdf["path"],
+        "left_offset": tuple(urdf["left_offset"]),
+        "right_offset": tuple(urdf["right_offset"]),
+        "left_rotation": urdf["left_rotation"],
+        "right_rotation": urdf["right_rotation"],
     }
 
 

@@ -57,15 +57,19 @@ def get_device(device_str: str) -> torch.device:
 
 
 def get_inference_config(config: dict) -> dict:
-    """Extract inference configuration with defaults."""
-    inference = config.get("inference", {})
+    """Extract inference configuration.
+
+    Raises:
+        KeyError: If [inference] section or required keys are missing.
+    """
+    inference = config["inference"]
     return {
-        "policy_repo_id": inference.get("policy_repo_id", "jhimmens/linique-act"),
-        "dataset_repo_id": inference.get("dataset_repo_id", "jhimmens/linique"),
-        "device": inference.get("device", "mps"),
-        "task": inference.get("task", "folding"),
-        "fps": inference.get("fps", 30),
-        "display": inference.get("display", True),
+        "policy_repo_id": inference["policy_repo_id"],
+        "dataset_repo_id": inference["dataset_repo_id"],
+        "device": inference["device"],
+        "task": inference["task"],
+        "fps": inference["fps"],
+        "display": inference["display"],
     }
 
 
@@ -265,7 +269,7 @@ def main(
         if listener:
             listener.stop()
 
-        stow_and_disconnect(robot, config)
+        stow_and_disconnect(robot)
 
     total_time = time.time() - start_time
     typer.echo(f"\nInference complete. Ran for {total_time:.1f}s ({step} steps)")

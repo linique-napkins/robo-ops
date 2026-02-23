@@ -182,7 +182,7 @@ def main() -> None:  # noqa: PLR0912
         if teleop.is_connected:
             print("Disconnecting teleoperator...")
             teleop.disconnect()
-        stow_and_disconnect(robot, config)
+        stow_and_disconnect(robot)
 
         # Save Rerun recording
         if args.display:

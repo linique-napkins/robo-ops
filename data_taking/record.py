@@ -547,7 +547,7 @@ def main(  # noqa: PLR0912
             typer.echo("Disconnecting teleoperator...")
             teleop.disconnect()
 
-        stow_and_disconnect(robot, config)
+        stow_and_disconnect(robot)
 
         if listener:
             listener.stop()

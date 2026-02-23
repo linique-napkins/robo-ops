@@ -9,13 +9,10 @@ import time
 
 from lerobot.utils.robot_utils import precise_sleep
 
-from lib.config import load_config
-
 # Joint names (without arm prefix)
 JOINT_NAMES = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
 
-# Defaults if not specified in config.toml
-DEFAULT_STOW_POSITION = {
+STOW_POSITION = {
     "shoulder_pan": 0.0,
     "shoulder_lift": -99.0,
     "elbow_flex": 99.0,
@@ -23,23 +20,8 @@ DEFAULT_STOW_POSITION = {
     "wrist_roll": 0.0,
     "gripper": 80.0,
 }
-DEFAULT_STEPS = 50
-DEFAULT_FPS = 30
-
-
-def _get_stow_config(config: dict | None) -> tuple[dict[str, float], int, int]:
-    """Extract stow parameters from config, falling back to defaults."""
-    if config is None:
-        config = load_config()
-
-    stow = config.get("stow", {})
-    steps = stow.get("steps", DEFAULT_STEPS)
-    fps = stow.get("fps", DEFAULT_FPS)
-
-    position = dict(DEFAULT_STOW_POSITION)
-    position.update(stow.get("position", {}))
-
-    return position, steps, fps
+STOW_STEPS = 50
+STOW_FPS = 30
 
 
 def _is_bimanual(robot) -> bool:
@@ -55,7 +37,7 @@ def _build_action_keys(bimanual: bool) -> list[str]:
     return [f"{joint}.pos" for joint in JOINT_NAMES]
 
 
-def stow_and_disconnect(robot, config: dict | None = None) -> None:
+def stow_and_disconnect(robot) -> None:
     """Move robot arms to stow position, then disconnect.
 
     Works with both BiSOFollower (bimanual) and SOFollower (single arm).
@@ -63,13 +45,11 @@ def stow_and_disconnect(robot, config: dict | None = None) -> None:
 
     Args:
         robot: Connected robot instance (BiSOFollower or SOFollower).
-        config: Global config dict. If None, loads from default config.toml.
     """
     if not robot.is_connected:
         return
 
     try:
-        position, steps, fps = _get_stow_config(config)
         bimanual = _is_bimanual(robot)
         action_keys = _build_action_keys(bimanual)
 
@@ -84,14 +64,14 @@ def stow_and_disconnect(robot, config: dict | None = None) -> None:
         for key in action_keys:
             # Strip prefix and .pos suffix to get bare joint name
             bare = key.replace("left_", "").replace("right_", "").replace(".pos", "")
-            target[key] = position[bare]
+            target[key] = STOW_POSITION[bare]
 
         print("Stowing robot...")
 
         # Interpolate from current to target
-        for step in range(1, steps + 1):
+        for step in range(1, STOW_STEPS + 1):
             loop_start = time.perf_counter()
-            alpha = step / steps
+            alpha = step / STOW_STEPS
 
             waypoint = {}
             for key in action_keys:
@@ -100,7 +80,7 @@ def stow_and_disconnect(robot, config: dict | None = None) -> None:
             robot.send_action(waypoint)
 
             dt_s = time.perf_counter() - loop_start
-            precise_sleep(max(1 / fps - dt_s, 0.0))
+            precise_sleep(max(1 / STOW_FPS - dt_s, 0.0))
 
         print("Stow complete.")
 

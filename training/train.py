@@ -69,24 +69,28 @@ def print_training_config(training_cfg: dict) -> None:
 
 
 def get_training_config(config: dict) -> dict:
-    """Extract training configuration with defaults."""
-    training = config.get("training", {})
+    """Extract training configuration.
+
+    Raises:
+        KeyError: If [training] section or required keys are missing.
+    """
+    training = config["training"]
     return {
-        "dataset_repo_id": training.get("dataset_repo_id", "jhimmens/linique"),
-        "output_repo_id": training.get("output_repo_id", "jhimmens/linique-act"),
-        "policy": training.get("policy", "act"),
-        "steps": training.get("steps", 100000),
-        "batch_size": training.get("batch_size", 32),
-        "learning_rate": training.get("learning_rate", 1e-5),
-        "device": training.get("device", "mps"),
-        "chunk_size": training.get("chunk_size", 100),
-        "dim_model": training.get("dim_model", 512),
-        "n_heads": training.get("n_heads", 8),
-        "n_encoder_layers": training.get("n_encoder_layers", 4),
+        "dataset_repo_id": training["dataset_repo_id"],
+        "output_repo_id": training["output_repo_id"],
+        "policy": training["policy"],
+        "steps": training["steps"],
+        "batch_size": training["batch_size"],
+        "learning_rate": training["learning_rate"],
+        "device": training["device"],
+        "chunk_size": training["chunk_size"],
+        "dim_model": training["dim_model"],
+        "n_heads": training["n_heads"],
+        "n_encoder_layers": training["n_encoder_layers"],
         "output_dir": training.get("output_dir"),
-        "save_freq": training.get("save_freq", 10000),
-        "log_freq": training.get("log_freq", 100),
-        "wandb_project": training.get("wandb_project", "linique-robot"),
+        "save_freq": training["save_freq"],
+        "log_freq": training["log_freq"],
+        "wandb_project": training["wandb_project"],
         "wandb_entity": training.get("wandb_entity"),
     }
 

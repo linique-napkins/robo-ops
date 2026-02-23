@@ -225,7 +225,7 @@ def main(  # noqa: PLR0912
 
     finally:
         if robot:
-            stow_and_disconnect(robot, config)
+            stow_and_disconnect(robot)
 
         # Save Rerun recording
         rrd_path = save_rrd()
