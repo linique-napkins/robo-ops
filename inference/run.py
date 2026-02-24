@@ -39,6 +39,7 @@ from lib.robots import get_bimanual_follower
 from lib.stow import stow_and_disconnect
 from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_observation_and_action
+from lib.urdf_viz import save_rrd
 
 app = typer.Typer()
 
@@ -281,6 +282,10 @@ def main(
             listener.stop()
 
         stow_and_disconnect(robot)
+
+        # Save Rerun recording
+        if display and (rrd_path := save_rrd()):
+            typer.echo(f"Rerun recording saved to: {rrd_path}")
 
     total_time = time.time() - start_time
     typer.echo(f"\nInference complete. Ran for {total_time:.1f}s ({step} steps)")

@@ -21,10 +21,12 @@ PROJECT=/arc/project/ss-engineeringphysics-1/2617-Napkin-Folding
 OUTPUT_DIR=$SCRATCH/training_outputs
 
 # ── Environment ─────────────────────────────────────────────
-module load gcc
+module load gcc/9.4.0
 module load cuda
+module load ffmpeg/6.0
+export LD_LIBRARY_PATH=$FFMPEG_ROOT/lib:$LD_LIBRARY_PATH
 
-source $HOME/.venv/bin/activate
+source $HOME/venvs/robo-ops/bin/activate
 
 REPO_DIR=$SCRATCH/robo-ops
 cd $REPO_DIR
@@ -32,6 +34,7 @@ cd $REPO_DIR
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export WANDB_MODE=offline
 export HF_HOME=$SCRATCH/.cache/huggingface
+export TORCH_HOME=$SCRATCH/.cache/torch
 export WANDB_DIR=$SCRATCH/robo-ops
 
 # ── Sync dataset from project storage (read-only) ──────────

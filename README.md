@@ -205,6 +205,35 @@ Configure in `inference/config.toml`:
 
 Press `q` to stop inference.
 
+## 8. Rerun Visualization
+
+Scripts that support `--display` automatically save `.rrd` recordings to `data/recordings/` when they exit:
+
+- `data_taking/teleop.py --display`
+- `data_taking/record.py --display`
+- `data_taking/replay.py --display`
+- `inference/run.py --display`
+
+### Open a saved recording
+
+```bash
+rerun data/recordings/<file>.rrd
+```
+
+### Export video
+
+In the Rerun viewer, use the menu **Export > Video** to render a recording to an MP4 file.
+
+### Load recordings programmatically
+
+```python
+import rerun as rr
+
+rr.init("analysis")
+rr.connect()
+rr.log_file_from_path("data/recordings/<file>.rrd")
+```
+
 ## Project Structure
 
 ```
