@@ -20,6 +20,7 @@ from lib.robots import get_single_follower
 from lib.robots import get_single_leader
 from lib.stow import stow
 from lib.stow import stow_and_disconnect
+from lib.stow import stow_leader
 
 __all__ = [
     "CALIBRATION_DIR",
@@ -39,5 +40,6 @@ __all__ = [
     "load_config",
     "stow",
     "stow_and_disconnect",
+    "stow_leader",
     "validate_config",
 ]

@@ -2,16 +2,16 @@
 
 [training]
 # Dataset to train on (HuggingFace repo ID)
-dataset_repo_id = "jhimmens/linique"
+dataset_repo_id = "jhimmens/linique-v2"
 
 # Where to push the trained model (HuggingFace repo ID)
-output_repo_id = "jhimmens/linique-act"
+output_repo_id = "jhimmens/linique-act-v2"
 
 # Policy type
 policy = "act"
 
 # Training hyperparameters
-steps = 50 #100000
+steps = 100000
 batch_size = 8
 learning_rate = 1e-5
 

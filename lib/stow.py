@@ -5,6 +5,7 @@ Moves follower arms to a safe stowed position before disconnecting,
 preventing gravity-induced collapse onto the table.
 """
 
+import contextlib
 import time
 
 from lerobot.utils.robot_utils import precise_sleep
@@ -86,6 +87,71 @@ def stow(robot) -> None:
 
     except Exception as e:
         print(f"Warning: stow failed ({e}).")
+
+
+def stow_leader(teleop) -> None:
+    """Stow leader arms by temporarily enabling torque.
+
+    Leaders don't have send_action(), so we drive the motor bus directly:
+    enable torque, interpolate to stow position, then disable torque so
+    the arms are free to move by hand again.
+
+    Works with both BiSOLeader (bimanual) and SOLeader (single arm).
+
+    Args:
+        teleop: Connected leader teleoperator instance.
+    """
+    if not teleop.is_connected:
+        return
+
+    try:
+        # Collect individual arm objects
+        arms: list[tuple[str, object]] = []
+        if hasattr(teleop, "left_arm"):
+            arms.append(("left", teleop.left_arm))
+            arms.append(("right", teleop.right_arm))
+        else:
+            arms.append(("arm", teleop))
+
+        print("Stowing leader arms...")
+
+        for _label, arm in arms:
+            bus = arm.bus
+
+            # Read current positions (calibrated, in degrees)
+            current = bus.sync_read("Present_Position")
+
+            # Build target from STOW_POSITION
+            target = {joint: STOW_POSITION[joint] for joint in current}
+
+            # Enable torque so we can drive the motors
+            bus.enable_torque()
+
+            # Interpolate from current to stow
+            for step in range(1, STOW_STEPS + 1):
+                loop_start = time.perf_counter()
+                alpha = step / STOW_STEPS
+
+                waypoint = {
+                    joint: current[joint] + alpha * (target[joint] - current[joint])
+                    for joint in current
+                }
+                bus.sync_write("Goal_Position", waypoint)
+
+                dt_s = time.perf_counter() - loop_start
+                precise_sleep(max(1 / STOW_FPS - dt_s, 0.0))
+
+            # Release torque so user can move arms freely
+            bus.disable_torque()
+
+        print("Leader stow complete.")
+
+    except Exception as e:
+        print(f"Warning: leader stow failed ({e}).")
+        # Best-effort: disable torque on all arms so they're not stuck
+        for _, arm in arms:
+            with contextlib.suppress(Exception):
+                arm.bus.disable_torque()
 
 
 def stow_and_disconnect(robot) -> None:

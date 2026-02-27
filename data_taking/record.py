@@ -49,6 +49,7 @@ from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_camera_images
 from lib.urdf_viz import log_urdf_state
 from lib.urdf_viz import save_rrd
+from utils.find_cameras import configure_exposure
 
 app = typer.Typer()
 
@@ -207,24 +208,34 @@ def print_config(config: dict, recording_cfg: dict) -> None:
     typer.echo(f"  Idle timeout:   {idle}s" if idle > 0 else "  Idle timeout:   disabled")
 
 
-def is_valid_local_dataset(local_path: Path) -> bool:
-    """Check if a local dataset directory contains a valid, complete dataset.
+def _count_saved_episodes(local_path: Path) -> int:
+    """Count episodes that have been fully saved (parquet data files on disk)."""
+    data_dir = local_path / "data"
+    if not data_dir.exists():
+        return 0
+    return len(list(data_dir.rglob("*.parquet")))
 
-    A valid dataset must have:
-    - meta/info.json
-    - meta/tasks.json (or meta/tasks.jsonl)
-    - At least one episode parquet file OR be empty (0 episodes)
+
+def is_valid_local_dataset(local_path: Path) -> bool:
+    """Check if a local dataset directory contains a valid, resumable dataset.
+
+    A valid dataset needs meta/info.json and either tasks metadata or saved episode data.
+    This is lenient so that crash-interrupted datasets (which may be missing tasks.json
+    if finalize() never ran) are not mistakenly deleted.
     """
     meta_dir = local_path / "meta"
     if not meta_dir.exists():
         return False
 
-    # Check required metadata files
     if not (meta_dir / "info.json").exists():
         return False
 
-    # tasks.json is required for a complete dataset
-    return (meta_dir / "tasks.json").exists() or (meta_dir / "tasks.jsonl").exists()
+    # Valid if tasks metadata exists (clean shutdown)
+    if (meta_dir / "tasks.json").exists() or (meta_dir / "tasks.jsonl").exists():
+        return True
+
+    # Also valid if there are saved episode parquet files (crash recovery)
+    return _count_saved_episodes(local_path) > 0
 
 
 def create_or_resume_dataset(
@@ -241,10 +252,17 @@ def create_or_resume_dataset(
     """
     local_path = get_local_dataset_path(repo_id)
 
-    # Check for existing valid local dataset
+    # Check for existing local dataset
     if resume and local_path.exists() and is_valid_local_dataset(local_path):
-        typer.echo(f"Resuming local dataset: {local_path}")
-        dataset = LeRobotDataset(repo_id, root=local_path)
+        saved = _count_saved_episodes(local_path)
+        typer.echo(f"Resuming local dataset: {local_path} ({saved} saved episodes)")
+        try:
+            dataset = LeRobotDataset(repo_id, root=local_path)
+        except Exception as e:
+            typer.echo(f"Warning: failed to load dataset ({e})")
+            typer.echo(f"Episode data is preserved at: {local_path}")
+            typer.echo("Refusing to delete — please inspect or move it manually.")
+            raise typer.Exit(1)
         if robot.cameras:
             dataset.start_image_writer(
                 num_processes=0,
@@ -253,7 +271,12 @@ def create_or_resume_dataset(
         return dataset
 
     if resume and local_path.exists():
-        typer.echo(f"Found incomplete dataset at {local_path}, removing...")
+        saved = _count_saved_episodes(local_path)
+        if saved > 0:
+            typer.echo(f"Found {saved} saved episodes at {local_path} but metadata is missing.")
+            typer.echo("Refusing to delete — please inspect or move it manually.")
+            raise typer.Exit(1)
+        typer.echo(f"Found empty incomplete dataset at {local_path}, removing...")
         shutil.rmtree(local_path)
 
     if resume:
@@ -263,6 +286,11 @@ def create_or_resume_dataset(
 
     # Clean up stale local cache if it exists (from failed previous runs)
     if local_path.exists():
+        saved = _count_saved_episodes(local_path)
+        if saved > 0:
+            typer.echo(f"Found {saved} saved episodes at {local_path}.")
+            typer.echo("Refusing to delete — please inspect or move it manually.")
+            raise typer.Exit(1)
         typer.echo(f"Removing existing local data: {local_path}")
         shutil.rmtree(local_path)
 
@@ -338,6 +366,12 @@ def main(  # noqa: PLR0912
         raise typer.Exit(0)
 
     log_say("Starting data collection", play_sounds=True)
+
+    # Apply camera exposure settings (v4l2 settings drift across reboots/reconnects)
+    typer.echo("\nApplying camera exposure settings...")
+    for name, cam in cameras_cfg.items():
+        device = Path(cam["path"]).resolve()
+        configure_exposure(str(device), name)
 
     # Build camera configs for robot
     camera_configs = {}
@@ -494,10 +528,32 @@ def main(  # noqa: PLR0912
                     dataset.clear_episode_buffer()
                     continue
 
-                # Stow arms to safe position while saving
+                # Clear exit_early so it doesn't leak into the next loop
+                events["exit_early"] = False
+
+                # Stow arms to safe position while reviewing
                 stow(robot)
 
+                # Prompt for episode approval
+                _log_banner(
+                    f"Episode {episode_num} recorded ({episode_duration:.1f}s)  —  Save? [Y/n/r]"
+                )
+                log_say("Episode finished. Save, discard, or re-record?", play_sounds=True)
+                choice = input("  > ").strip().lower()
+                if choice == "r":
+                    _log_banner("DISCARDED  Re-recording episode")
+                    log_say("Discarding episode. Re-recording.", play_sounds=True)
+                    dataset.clear_episode_buffer()
+                    continue
+                if choice == "n":
+                    _log_banner("DISCARDED  Skipping episode")
+                    log_say("Discarding episode.", play_sounds=True)
+                    dataset.clear_episode_buffer()
+                    recorded_episodes += 1
+                    continue
+
                 # Save the episode
+                typer.echo("  Saving episode...")
                 _log_banner(f"SAVING  Episode {episode_num}  ({episode_duration:.1f}s recorded)")
                 save_start = time.monotonic()
                 dataset.save_episode()

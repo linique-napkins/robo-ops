@@ -3,13 +3,13 @@
 
 [recording]
 # Hugging Face dataset repository ID
-repo_id = "jhimmens/linique"
+repo_id = "jhimmens/linique-v2"
 # Task description for the recording
-task = "pickup"
+task = "full-fold-v1"
 # Number of episodes to record
 num_episodes = 50
 # Duration of each episode in seconds
-episode_time = 60
+episode_time = 240
 # Time allowed for environment reset between episodes
 reset_time = 10
 # Seconds of no arm movement before auto-ending an episode (0 to disable)
