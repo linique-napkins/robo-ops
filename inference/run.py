@@ -40,6 +40,7 @@ from lib.stow import stow_and_disconnect
 from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_observation_and_action
 from lib.urdf_viz import save_rrd
+from utils.find_cameras import configure_exposure
 
 app = typer.Typer()
 
@@ -128,6 +129,12 @@ def main(
     if not typer.confirm("\nProceed with inference?"):
         typer.echo("Inference cancelled.")
         raise typer.Exit(0)
+
+    # Apply camera exposure settings (v4l2 settings drift across reboots/reconnects)
+    typer.echo("\nApplying camera exposure settings...")
+    for name, cam in cameras_cfg.items():
+        device_path = Path(cam["path"]).resolve()
+        configure_exposure(str(device_path), name)
 
     # Setup device
     device = get_device(inference_cfg["device"])

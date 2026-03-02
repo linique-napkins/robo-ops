@@ -16,7 +16,7 @@ uv run inference/run.py
 
 ```bash
 # Sync dataset to Sockeye project storage
-rsync -avzP data/datasets/jhimmens/linique \
+rsync -avzP data/datasets/jhimmens/linique-v2 \
     jhimmens@dtn.sockeye.arc.ubc.ca:/arc/project/ss-engineeringphysics-1/2617-Napkin-Folding/datasets/
 
 # Sync repo to scratch
@@ -52,6 +52,7 @@ sbatch training/arc_train.sh                          # full training
 squeue -u $USER                                       # check job status
 tail -f /scratch/ss-engineeringphysics-1/$USER/training_outputs/output-<jobid>.txt
 scontrol show job <jobid>
+#scancel <jobid>
 
 # After training: copy checkpoints from scratch to project storage (scratch gets purged!)
 cp -r /scratch/ss-engineeringphysics-1/$USER/training_outputs \
@@ -92,8 +93,8 @@ Edit `training/config.toml`:
 
 ```toml
 [training]
-dataset_repo_id = "jhimmens/linique"
-output_repo_id = "jhimmens/linique-act"
+dataset_repo_id = "jhimmens/linique-v2"
+output_repo_id = "jhimmens/linique-act-v2"
 steps = 100000
 batch_size = 8        # V100 32GB can handle 16-32 depending on image size
 learning_rate = 1e-5

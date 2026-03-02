@@ -92,6 +92,7 @@ def get_training_config(config: dict) -> dict:
         "log_freq": training["log_freq"],
         "wandb_project": training["wandb_project"],
         "wandb_entity": training.get("wandb_entity"),
+        "video_backend": training.get("video_backend"),
     }
 
 
@@ -199,7 +200,11 @@ def main(  # noqa: PLR0912
 
     # Load dataset
     typer.echo("\nLoading full dataset...")
-    dataset = LeRobotDataset(dataset_repo_id, root=local_path, delta_timestamps=delta_timestamps)
+    video_backend = training_cfg.get("video_backend")
+    dataset = LeRobotDataset(
+        dataset_repo_id, root=local_path, delta_timestamps=delta_timestamps,
+        video_backend=video_backend,
+    )
     typer.echo(f"  Episodes: {dataset.num_episodes}")
     typer.echo(f"  Frames: {len(dataset)}")
 
@@ -290,11 +295,18 @@ def main(  # noqa: PLR0912
                     )
                     eta_hours = eta_seconds / 3600
 
+                    mem_str = ""
+                    if device.type == "cuda":
+                        mem_gb = torch.cuda.memory_allocated(device) / 1e9
+                        peak_gb = torch.cuda.max_memory_allocated(device) / 1e9
+                        total_gb = torch.cuda.get_device_properties(device).total_memory / 1e9
+                        mem_str = f" | VRAM: {mem_gb:.1f}GB cur, {peak_gb:.1f}GB peak, {total_gb:.0f}GB total"
+
                     typer.echo(
                         f"Step {step}/{training_steps} | "
                         f"Loss: {loss.item():.4f} | "
                         f"Speed: {steps_per_sec:.1f} steps/s | "
-                        f"ETA: {eta_hours:.1f}h"
+                        f"ETA: {eta_hours:.1f}h{mem_str}"
                     )
 
                     if wandb_enabled:
@@ -304,6 +316,10 @@ def main(  # noqa: PLR0912
                             "train/epoch": epoch,
                             "train/steps_per_sec": steps_per_sec,
                         }
+                        if device.type == "cuda":
+                            log_data["train/vram_gb"] = mem_gb
+                            log_data["train/vram_peak_gb"] = peak_gb
+                            log_data["train/vram_total_gb"] = total_gb
                         # Add individual loss components
                         for key, value in loss_dict.items():
                             log_data[f"train/{key}"] = (

@@ -2,7 +2,7 @@
 
 [inference]
 # Trained policy to load (HuggingFace repo ID or local path)
-policy_repo_id = "data/outputs/jhimmens_linique-act-v2/checkpoint-18027-interrupted"
+policy_repo_id = "data/outputs/jhimmens_linique-act-v2/final"
 
 # Dataset used for training (needed for feature definitions)
 dataset_repo_id = "jhimmens/linique-v2"
@@ -22,4 +22,4 @@ display = true
 # Temporal ensembling smooths actions across overlapping chunk predictions.
 # Set to null/remove to disable. 0.01 is the ACT paper default.
 # Requires inference every step, so ensure your device can handle it.
-temporal_ensemble_coeff = 0.00
+temporal_ensemble_coeff = 0.01

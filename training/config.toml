@@ -11,12 +11,15 @@ output_repo_id = "jhimmens/linique-act-v2"
 policy = "act"
 
 # Training hyperparameters
-steps = 100000
-batch_size = 8
-learning_rate = 1e-5
+steps = 100000         # ~21k if batch_size=38 (scale inversely with batch size)
+batch_size = 38        # 8 on 2070, 38 on sockeye
+learning_rate = 1e-5   # ~4.75e-5 if batch_size=38 (scale linearly with batch size)
 
 # Device (cuda, mps, cpu)
 device = "cuda"
+
+# Video decoder backend: "torchcodec" (default) or "pyav" (use on HPC where torchcodec fails)
+video_backend = "pyav"
 
 # ACT-specific settings
 chunk_size = 100       # Number of future actions to predict
