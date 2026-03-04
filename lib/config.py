@@ -2,11 +2,18 @@
 Configuration loading and validation utilities.
 """
 
+import os
 import subprocess
 import tomllib
 from pathlib import Path
 
 from huggingface_hub import HfApi
+
+# Username → environment mapping
+_ENV_MAP: dict[str, str] = {
+    "nvd": "local",
+    "jhimmens": "sockeye",
+}
 
 # Root directory of the project
 ROOT_DIR = Path(__file__).parent.parent
@@ -18,6 +25,59 @@ DATA_DIR = ROOT_DIR / "data"
 DATASETS_DIR = DATA_DIR / "datasets"
 RECORDINGS_DIR = DATA_DIR / "recordings"
 OUTPUTS_DIR = DATA_DIR / "outputs"
+
+
+def get_environment() -> str:
+    """Detect the current environment from OS username.
+
+    Returns:
+        Environment name (e.g. "local", "sockeye").
+
+    Raises:
+        RuntimeError: If username is not in the known environment map.
+    """
+    username = os.getenv("USER", "")
+    env = _ENV_MAP.get(username)
+    if env is None:
+        known = ", ".join(f"{u!r} → {e!r}" for u, e in _ENV_MAP.items())
+        msg = f"Unknown user {username!r}. Known environments: {known}"
+        raise RuntimeError(msg)
+    return env
+
+
+def load_training_config(config_path: Path, section: str) -> dict:
+    """Load a training config with environment-specific overrides.
+
+    Reads [section] from the TOML file, detects the current environment,
+    merges [section.env.{env}] into the base dict, and strips the "env" key.
+
+    Args:
+        config_path: Path to the TOML config file.
+        section: Top-level TOML section name (e.g. "training", "sarm").
+
+    Returns:
+        Flat configuration dictionary with env-specific values merged in.
+
+    Raises:
+        RuntimeError: If the detected environment has no config section.
+        KeyError: If the section is missing from the TOML file.
+    """
+    with config_path.open("rb") as f:
+        raw = tomllib.load(f)
+
+    base = dict(raw[section])
+    env = get_environment()
+    env_overrides = base.get("env", {}).get(env)
+    if env_overrides is None:
+        msg = (
+            f"No [{section}.env.{env}] section in {config_path}. "
+            f"Add environment-specific config for {env!r}."
+        )
+        raise RuntimeError(msg)
+
+    base.pop("env", None)
+    base.update(env_overrides)
+    return base
 
 
 def load_config(config_path: Path | None = None) -> dict:
@@ -113,6 +173,26 @@ def get_urdf_config(config: dict) -> dict:
         "right_offset": tuple(urdf["right_offset"]),
         "left_rotation": urdf["left_rotation"],
         "right_rotation": urdf["right_rotation"],
+    }
+
+
+def get_stow_config(config: dict | None = None) -> dict:
+    """Get stow configuration.
+
+    Args:
+        config: Full configuration dictionary. If None, loads from default config.
+
+    Returns:
+        Dictionary with stow settings.
+
+    Raises:
+        KeyError: If [stow] section or 'wait' key is missing from config.
+    """
+    if config is None:
+        config = load_config()
+    stow = config["stow"]
+    return {
+        "wait": stow["wait"],
     }
 
 

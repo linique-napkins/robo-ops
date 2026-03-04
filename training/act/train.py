@@ -4,19 +4,20 @@ Training script for ACT policy on bimanual SO101 robot data.
 Uses wandb for experiment tracking and pushes trained models to HuggingFace Hub.
 
 Usage:
-    uv run training/train.py
+    uv run training/act/train.py
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import time
+from datetime import UTC
+from datetime import datetime
 
 import torch
 import typer
-import wandb
 from lerobot.configs.types import FeatureType
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
@@ -25,9 +26,10 @@ from lerobot.policies.act.configuration_act import ACTConfig
 from lerobot.policies.act.modeling_act import ACTPolicy
 from lerobot.policies.factory import make_pre_post_processors
 
+import wandb
 from lib.config import OUTPUTS_DIR
 from lib.config import get_local_dataset_path
-from lib.config import load_config
+from lib.config import load_training_config
 
 app = typer.Typer()
 
@@ -63,37 +65,9 @@ def print_training_config(training_cfg: dict) -> None:
     typer.echo(f"  Learning rate:  {training_cfg['learning_rate']}")
     typer.echo(f"  Device:         {training_cfg['device']}")
     typer.echo(f"  Chunk size:     {training_cfg['chunk_size']}")
-    typer.echo(f"  Output dir:     {training_cfg['output_dir'] or 'default (data/outputs/)'}")
+    typer.echo(f"  Output dir:     {training_cfg.get('output_dir') or 'default (data/outputs/)'}")
     typer.echo(f"  Save freq:      every {training_cfg['save_freq']} steps")
     typer.echo(f"  Log freq:       every {training_cfg['log_freq']} steps")
-
-
-def get_training_config(config: dict) -> dict:
-    """Extract training configuration.
-
-    Raises:
-        KeyError: If [training] section or required keys are missing.
-    """
-    training = config["training"]
-    return {
-        "dataset_repo_id": training["dataset_repo_id"],
-        "output_repo_id": training["output_repo_id"],
-        "policy": training["policy"],
-        "steps": training["steps"],
-        "batch_size": training["batch_size"],
-        "learning_rate": training["learning_rate"],
-        "device": training["device"],
-        "chunk_size": training["chunk_size"],
-        "dim_model": training["dim_model"],
-        "n_heads": training["n_heads"],
-        "n_encoder_layers": training["n_encoder_layers"],
-        "output_dir": training.get("output_dir"),
-        "save_freq": training["save_freq"],
-        "log_freq": training["log_freq"],
-        "wandb_project": training["wandb_project"],
-        "wandb_entity": training.get("wandb_entity"),
-        "video_backend": training.get("video_backend"),
-    }
 
 
 @app.command()
@@ -112,6 +86,11 @@ def main(  # noqa: PLR0912
         None,
         "--resume",
         help="Resume a previous wandb run by ID",
+    ),
+    checkpoint_path: str = typer.Option(
+        None,
+        "--checkpoint",
+        help="Path to checkpoint dir to resume from (e.g. data/outputs/.../checkpoint-10000)",
     ),
     yes: bool = typer.Option(
         False,
@@ -133,8 +112,7 @@ def main(  # noqa: PLR0912
     typer.echo("\n=== ACT Policy Training ===\n")
 
     # Load training configuration
-    config = load_config(LOCAL_CONFIG_PATH)
-    training_cfg = get_training_config(config)
+    training_cfg = load_training_config(LOCAL_CONFIG_PATH, "training")
 
     print_training_config(training_cfg)
 
@@ -202,14 +180,51 @@ def main(  # noqa: PLR0912
     typer.echo("\nLoading full dataset...")
     video_backend = training_cfg.get("video_backend")
     dataset = LeRobotDataset(
-        dataset_repo_id, root=local_path, delta_timestamps=delta_timestamps,
+        dataset_repo_id,
+        root=local_path,
+        delta_timestamps=delta_timestamps,
         video_backend=video_backend,
     )
     typer.echo(f"  Episodes: {dataset.num_episodes}")
     typer.echo(f"  Frames: {len(dataset)}")
 
+    # Load checkpoint weights if resuming
+    resume_step = 0
+    if checkpoint_path:
+        ckpt_dir = Path(checkpoint_path)
+        typer.echo(f"\nLoading checkpoint from {ckpt_dir}...")
+        policy = ACTPolicy.from_pretrained(ckpt_dir)
+        policy.train()
+        policy.to(device)
+        # Restore step counter
+        state_path = ckpt_dir / "training_state.pt"
+        if state_path.exists():
+            training_state = torch.load(state_path, map_location=device, weights_only=True)
+            resume_step = training_state["step"]
+            typer.echo(f"  Resuming from step {resume_step}")
+        else:
+            # Infer step from directory name (e.g. checkpoint-10000)
+            ckpt_name = ckpt_dir.name
+            for part in ckpt_name.split("-"):
+                if part.isdigit():
+                    resume_step = int(part)
+                    break
+            typer.echo(f"  No training_state.pt, inferred step {resume_step} from dir name")
+
     # Create optimizer and dataloader
     optimizer = policy_cfg.get_optimizer_preset().build(policy.parameters())
+
+    # Restore optimizer state if resuming from checkpoint
+    if checkpoint_path:
+        optimizer_path = Path(checkpoint_path) / "optimizer.pt"
+        if optimizer_path.exists():
+            optimizer.load_state_dict(
+                torch.load(optimizer_path, map_location=device, weights_only=True)
+            )
+            typer.echo("  Optimizer state restored")
+        else:
+            typer.echo("  Warning: no optimizer.pt found, optimizer starting fresh")
+
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=training_cfg["batch_size"],
@@ -219,14 +234,13 @@ def main(  # noqa: PLR0912
         num_workers=4,
     )
 
-    # Setup output directory: CLI flag > config > default (data/outputs/)
+    # Setup base output directory: CLI flag > config > default (data/outputs/)
     if output_dir_override:
-        output_dir = Path(output_dir_override).expanduser()
-    elif training_cfg["output_dir"]:
-        output_dir = Path(training_cfg["output_dir"]).expanduser()
+        base_output_dir = Path(output_dir_override).expanduser()
+    elif training_cfg.get("output_dir"):
+        base_output_dir = Path(training_cfg["output_dir"]).expanduser()
     else:
-        output_dir = OUTPUTS_DIR / training_cfg["output_repo_id"].replace("/", "_")
-    output_dir.mkdir(parents=True, exist_ok=True)
+        base_output_dir = OUTPUTS_DIR / training_cfg["output_repo_id"].replace("/", "_")
 
     # Initialize wandb
     if wandb_enabled:
@@ -250,7 +264,7 @@ def main(  # noqa: PLR0912
         if resume_run_id:
             wandb.init(
                 project=training_cfg["wandb_project"],
-                entity=training_cfg["wandb_entity"],
+                entity=training_cfg.get("wandb_entity"),
                 id=resume_run_id,
                 resume="must",
                 config=wandb_config,
@@ -258,10 +272,18 @@ def main(  # noqa: PLR0912
         else:
             wandb.init(
                 project=training_cfg["wandb_project"],
-                entity=training_cfg["wandb_entity"],
+                entity=training_cfg.get("wandb_entity"),
                 config=wandb_config,
-                name=f"act-{training_cfg['dataset_repo_id'].split('/')[-1]}",
             )
+
+    # Create run-specific output directory using wandb run name or datetime
+    if wandb_enabled and wandb.run is not None:
+        run_name = wandb.run.name
+    else:
+        run_name = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
+    output_dir = base_output_dir / run_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+    typer.echo(f"  Output directory: {output_dir}")
 
     # Training loop
     typer.echo("\n=== Starting Training ===\n")
@@ -269,7 +291,7 @@ def main(  # noqa: PLR0912
     log_freq = training_cfg["log_freq"]
     save_freq = training_cfg["save_freq"]
 
-    step = 0
+    step = resume_step
     epoch = 0
     done = False
     start_time = time.time()
@@ -281,6 +303,7 @@ def main(  # noqa: PLR0912
                 batch = preprocessor(raw_batch)
                 loss, loss_dict = policy.forward(batch)
                 loss.backward()
+                grad_norm = torch.nn.utils.clip_grad_norm_(policy.parameters(), 10.0)
                 optimizer.step()
                 optimizer.zero_grad()
 
@@ -300,7 +323,10 @@ def main(  # noqa: PLR0912
                         mem_gb = torch.cuda.memory_allocated(device) / 1e9
                         peak_gb = torch.cuda.max_memory_allocated(device) / 1e9
                         total_gb = torch.cuda.get_device_properties(device).total_memory / 1e9
-                        mem_str = f" | VRAM: {mem_gb:.1f}GB cur, {peak_gb:.1f}GB peak, {total_gb:.0f}GB total"
+                        mem_str = (
+                            f" | VRAM: {mem_gb:.1f}GB cur,"
+                            f" {peak_gb:.1f}GB peak, {total_gb:.0f}GB total"
+                        )
 
                     typer.echo(
                         f"Step {step}/{training_steps} | "
@@ -312,6 +338,7 @@ def main(  # noqa: PLR0912
                     if wandb_enabled:
                         log_data = {
                             "train/loss": loss.item(),
+                            "train/grad_norm": grad_norm.item(),
                             "train/step": step,
                             "train/epoch": epoch,
                             "train/steps_per_sec": steps_per_sec,
@@ -336,6 +363,8 @@ def main(  # noqa: PLR0912
                     policy.save_pretrained(checkpoint_dir)
                     preprocessor.save_pretrained(checkpoint_dir)
                     postprocessor.save_pretrained(checkpoint_dir)
+                    torch.save(optimizer.state_dict(), checkpoint_dir / "optimizer.pt")
+                    torch.save({"step": step}, checkpoint_dir / "training_state.pt")
 
                     if wandb_enabled:
                         wandb.log({"train/checkpoint_saved": step}, step=step)
@@ -352,6 +381,8 @@ def main(  # noqa: PLR0912
             policy.save_pretrained(checkpoint_dir)
             preprocessor.save_pretrained(checkpoint_dir)
             postprocessor.save_pretrained(checkpoint_dir)
+            torch.save(optimizer.state_dict(), checkpoint_dir / "optimizer.pt")
+            torch.save({"step": step}, checkpoint_dir / "training_state.pt")
             typer.echo(f"Checkpoint saved to {checkpoint_dir}")
 
     # Save final model

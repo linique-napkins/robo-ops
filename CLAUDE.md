@@ -17,7 +17,8 @@ uv run ty check                            # Type check
 
 uv run data_taking/teleop.py --display     # Teleoperation with Rerun viz
 uv run data_taking/record.py               # Record episodes
-uv run training/train.py                   # Train ACT policy
+uv run training/act/train.py               # Train ACT policy
+uv run training/sarm/train.py              # Train SARM reward model
 uv run inference/run.py                    # Run policy on robot
 
 uv run utils/find_cameras.py               # Discover cameras & assign stable paths
@@ -30,7 +31,7 @@ uv run utils/test_realsense.py             # Test RealSense camera
 ### Module layout
 - **lib/** — Shared core: config loading (`config.py`), robot factory functions (`robots.py`), Rerun URDF visualization (`urdf_viz.py`)
 - **data_taking/** — Teleoperation, recording, replay scripts
-- **training/** — ACT policy training with wandb tracking
+- **training/** — ACT policy training (`act/`) and SARM reward modeling (`sarm/`), with wandb tracking
 - **inference/** — Policy execution on robot hardware
 - **setup/** — One-time hardware setup: motor config, calibration, health monitoring
 - **utils/** — Test/diagnostic scripts

@@ -1,4 +1,4 @@
-# Training Configuration
+# ACT Policy Training Configuration
 
 [training]
 # Dataset to train on (HuggingFace repo ID)
@@ -11,9 +11,7 @@ output_repo_id = "jhimmens/linique-act-v2"
 policy = "act"
 
 # Training hyperparameters
-steps = 100000         # ~21k if batch_size=38 (scale inversely with batch size)
-batch_size = 38        # 8 on 2070, 38 on sockeye
-learning_rate = 1e-5   # ~4.75e-5 if batch_size=38 (scale linearly with batch size)
+steps = 100000
 
 # Device (cuda, mps, cpu)
 device = "cuda"
@@ -27,15 +25,18 @@ dim_model = 512        # Transformer hidden dimension
 n_heads = 8            # Number of attention heads
 n_encoder_layers = 4   # Number of transformer encoder layers
 
-# Output directory for checkpoints and final model
-# Leave empty to use default (data/outputs/ in project root)
-# On HPC, set to a writable scratch path
-# output_dir = "/scratch/ss-engineeringphysics-1/$USER/training_outputs"
-
 # Checkpointing
 save_freq = 10000      # Save checkpoint every N steps
 log_freq = 100         # Log metrics every N steps
 
 # Weights & Biases
-wandb_project = "linique-robot"
+wandb_project = "linique-act"
 # wandb_entity = "your-team"  # Optional: W&B team/entity name
+
+[training.env.local]
+batch_size = 8
+learning_rate = 1e-5
+
+[training.env.sockeye]
+batch_size = 38
+learning_rate = 4.75e-5

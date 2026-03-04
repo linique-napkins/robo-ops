@@ -1,63 +1,65 @@
-# Training on ARC Sockeye
+# Training
 
-ACT policy training for bimanual SO101 robot on UBC ARC Sockeye HPC cluster.
+Two independent training pipelines for bimanual SO101 robot:
 
-
-## If training on local
-
-```bash
-# Run inference locally
-uv run inference/run.py
+```
+training/
+├── act/     ACT action-chunking policy (predicts motor commands, runs on robot)
+└── sarm/    SARM reward model (predicts task progress 0→1, computes RA-BC weights)
 ```
 
-## If training on sockeye
-
-### On your server (has internet)
-
-```bash
-# Sync dataset to Sockeye project storage
-rsync -avzP data/datasets/jhimmens/linique-v2 \
-    jhimmens@dtn.sockeye.arc.ubc.ca:/arc/project/ss-engineeringphysics-1/2617-Napkin-Folding/datasets/
-
-# Sync repo to scratch
-rsync -avzP --exclude data/ --exclude .venv/ --exclude wandb/ \
-    . jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/robo-ops/
-
-# Pull all training outputs (checkpoints + final model) back after training
-rsync -avzP jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/training_outputs/ \
-    data/outputs/jhimmens_linique-act/
-
-# Pull wandb offline runs and sync to cloud from here
-rsync -avzP jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/robo-ops/wandb/offline-run-* \
-    wandb/
-wandb sync wandb/offline-run-*
+```
+┌─────────────────────────────────┐     ┌──────────────────────────────────────┐
+│  ACT Pipeline                    │     │  SARM + RA-BC Pipeline                │
+│                                  │     │                                       │
+│  uv run training/act/train.py    │     │  1. uv run training/sarm/train.py     │
+│          │                       │     │          │                            │
+│          ▼                       │     │  2. Inspect predictions               │
+│  Run on robot                    │     │          │                            │
+│  uv run inference/run.py         │     │  3. Compute RA-BC weights             │
+│                                  │     │          │                            │
+│                                  │     │  4. lerobot-train --policy.type=pi0   │
+│                                  │     │     --use_rabc=true                   │
+│                                  │     │          │                            │
+│                                  │     │  5. Run on robot                      │
+│                                  │     │     uv run inference/run.py            │
+└─────────────────────────────────┘     └──────────────────────────────────────┘
 ```
 
-### On the Sockeye login node (has internet)
+See [act/README.md](act/README.md) and [sarm/README.md](sarm/README.md) for pipeline-specific docs.
+
+---
+
+## Resuming Cancelled Training
+
+Both pipelines save checkpoints periodically (every `save_freq` steps) and on Ctrl+C interruption. To resume:
 
 ```bash
-cd /scratch/ss-engineeringphysics-1/$USER/robo-ops
+# ACT — resume from a checkpoint (+ optionally resume the wandb run)
+uv run training/act/train.py --checkpoint data/outputs/.../checkpoint-10000 \
+                              --resume <wandb_run_id>
 
-# Pre-download ResNet weights (compute nodes have no internet)
-mkdir -p /scratch/ss-engineeringphysics-1/$USER/.cache/torch/hub/checkpoints
-wget -P /scratch/ss-engineeringphysics-1/$USER/.cache/torch/hub/checkpoints \
-    https://download.pytorch.org/models/resnet18-f37072fd.pth
-
-# Submit jobs
-sbatch --test-only training/arc_train.sh              # dry run
-TRAIN_STEPS=5 sbatch --time=0:15:00 training/arc_train.sh  # quick test
-sbatch training/arc_train.sh                          # full training
-
-# Monitor
-squeue -u $USER                                       # check job status
-tail -f /scratch/ss-engineeringphysics-1/$USER/training_outputs/output-<jobid>.txt
-scontrol show job <jobid>
-#scancel <jobid>
-
-# After training: copy checkpoints from scratch to project storage (scratch gets purged!)
-cp -r /scratch/ss-engineeringphysics-1/$USER/training_outputs \
-    /arc/project/ss-engineeringphysics-1/2617-Napkin-Folding/models/
+# SARM — same pattern
+uv run training/sarm/train.py --checkpoint data/outputs/.../checkpoint-1000 \
+                               --resume <wandb_run_id>
 ```
+
+`--checkpoint` restores model weights, optimizer state, and step counter. `--resume` continues logging to an existing wandb run (find the run ID on the wandb dashboard). Both flags are independent — you can use either or both.
+
+Checkpoint directory contents:
+
+```
+checkpoint-10000/
+├── model.safetensors       # Policy/model weights
+├── config.json             # Model config
+├── preprocessor_config.json
+├── postprocessor_config.json
+├── optimizer.pt            # Optimizer state
+├── scheduler.pt            # LR scheduler state (SARM only)
+└── training_state.pt       # Step counter
+```
+
+If `training_state.pt` is missing (e.g. from an older checkpoint), the step number is inferred from the directory name.
 
 ---
 
@@ -72,8 +74,6 @@ cp -r /scratch/ss-engineeringphysics-1/$USER/training_outputs \
 | RAM per node | 192 GB |
 | Total GPUs | 200 across 50 nodes |
 
----
-
 ## Storage Tiers
 
 | Tier | Path | Quota | Purge | Compute Access |
@@ -84,85 +84,3 @@ cp -r /scratch/ss-engineeringphysics-1/$USER/training_outputs \
 
 - **Home and Project are read-only on compute nodes.** Compute nodes also have **no internet access**. All output must go to scratch, and any downloads (model weights, packages) must be done from the login node beforehand.
 - **Scratch gets purged.** Copy results to project storage after training.
-
----
-
-## Configuration
-
-Edit `training/config.toml`:
-
-```toml
-[training]
-dataset_repo_id = "jhimmens/linique-v2"
-output_repo_id = "jhimmens/linique-act-v2"
-steps = 100000
-batch_size = 8        # V100 32GB can handle 16-32 depending on image size
-learning_rate = 1e-5
-device = "cuda"
-chunk_size = 100
-dim_model = 512
-n_heads = 8
-n_encoder_layers = 4
-save_freq = 10000
-log_freq = 100
-wandb_project = "linique-robot"
-```
-
-### Batch Size Guidance for V100-32GB
-
-With ACT (dim_model=512, chunk_size=100, 3 cameras at 640x480):
-- `batch_size = 8`: ~12 GB VRAM, safe starting point
-- `batch_size = 16`: ~20 GB VRAM, good throughput
-- `batch_size = 32`: ~28 GB VRAM, near the limit
-
----
-
-## Performance Tips
-
-### Mixed Precision (AMP)
-
-V100 Tensor Cores give ~1.5-2x speedup with FP16. **Not yet enabled in `train.py`.**
-
-```python
-scaler = torch.amp.GradScaler()
-with torch.amp.autocast(device_type="cuda"):
-    loss, loss_dict = policy.forward(batch)
-scaler.scale(loss).backward()
-scaler.step(optimizer)
-scaler.update()
-optimizer.zero_grad()
-```
-
-### Multi-GPU (Future)
-
-4x V100 DDP cuts training time by ~75%. Requires `train.py` changes (DDP init, distributed sampler).
-
-```bash
-#SBATCH --gpus-per-node=4
-#SBATCH --cpus-per-task=24
-#SBATCH --mem=192G
-
-torchrun --nproc_per_node=4 training/train.py
-```
-
----
-
-## Troubleshooting
-
-**"CUDA not available"**
-- Check `module load cuda` is in the SLURM script
-- Verify PyTorch has CUDA support: `python -c "import torch; print(torch.cuda.is_available())"`
-
-**OOM (Out of Memory)**
-- Reduce `batch_size` in `training/config.toml`
-- Enable mixed precision (AMP)
-- Check if you landed on a 16 GB node (add `#SBATCH --constraint=gpu_mem_32`)
-
-**wandb fails to sync**
-- Compute nodes have no internet — `arc_train.sh` uses `WANDB_MODE=offline`
-- Sync from login node: `wandb sync wandb/offline-run-*`
-
-**"Disk quota exceeded"**
-- `print_quota` to check usage
-- Move uv cache to scratch: `UV_CACHE_DIR=/scratch/.../uv-cache`
-- Home is only 50 GB

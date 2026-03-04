@@ -13,4 +13,4 @@ episode_time = 240
 # Time allowed for environment reset between episodes
 reset_time = 10
 # Seconds of no arm movement before auto-ending an episode (0 to disable)
-idle_timeout = 4
+idle_timeout = 1

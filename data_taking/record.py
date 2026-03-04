@@ -257,7 +257,7 @@ def create_or_resume_dataset(
         saved = _count_saved_episodes(local_path)
         typer.echo(f"Resuming local dataset: {local_path} ({saved} saved episodes)")
         try:
-            dataset = LeRobotDataset(repo_id, root=local_path)
+            dataset = LeRobotDataset(repo_id, root=local_path, streaming_encoding=True)
         except Exception as e:
             typer.echo(f"Warning: failed to load dataset ({e})")
             typer.echo(f"Episode data is preserved at: {local_path}")
@@ -303,6 +303,7 @@ def create_or_resume_dataset(
         use_videos=True,
         image_writer_processes=0,
         image_writer_threads=4 * len(robot.cameras),
+        streaming_encoding=True,
     )
 
 

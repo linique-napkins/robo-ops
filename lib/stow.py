@@ -10,6 +10,8 @@ import time
 
 from lerobot.utils.robot_utils import precise_sleep
 
+from lib.config import get_stow_config
+
 # Joint names (without arm prefix)
 JOINT_NAMES = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
 
@@ -49,6 +51,11 @@ def stow(robot) -> None:
     """
     if not robot.is_connected:
         return
+
+    # Wait for camera/encoder threads to release the USB bus
+    wait = get_stow_config()["wait"]
+    if wait > 0:
+        time.sleep(wait)
 
     try:
         bimanual = _is_bimanual(robot)

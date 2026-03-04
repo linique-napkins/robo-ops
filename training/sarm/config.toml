@@ -1,0 +1,99 @@
+# SARM (Stage-Aware Reward Model) Training Configuration
+#
+# SARM is a video-based reward model that predicts task progress (0->1) from
+# demonstrations. It uses CLIP (openai/clip-vit-base-patch32) to encode video
+# frames into 512-dim vectors, then trains transformer heads to classify stages
+# and predict within-stage progress (tau). CLIP runs locally on GPU during
+# training (~150MB, inference-only / frozen weights).
+#
+# SARM is NOT an action policy -- it does not run on the robot at inference time.
+# Its output is used to compute RA-BC weights that improve ACT training.
+#
+# Workflow:
+#   1. (Optional) Annotate subtasks for dense_only mode (see [dense] below)
+#   2. Train SARM:    uv run training/sarm/train.py
+#   3. Compute RA-BC:  uv run lerobot/.../compute_rabc_weights.py
+#   4. Retrain ACT:   uv run training/act/train.py --rabc-progress <path>
+
+[sarm]
+# Dataset to train on (HuggingFace repo ID)
+dataset_repo_id = "jhimmens/linique-v2"
+
+# Where to push the trained reward model (HuggingFace repo ID)
+output_repo_id = "jhimmens/linique-sarm"
+
+# ── Annotation mode ─────────────────────────────────────────
+#
+# "single_stage" (default):
+#   No annotations needed. Treats the entire episode as one stage. SARM learns
+#   overall task completion progress. Good starting point for any dataset.
+#
+# "dense_only":
+#   Fine-grained subtask annotations. SARM learns per-subtask progress (e.g.
+#   "folding step 1 is 60% done"). Requires dense_subtask_names and
+#   dense_temporal_proportions below. Before training, annotate the dataset:
+#
+#     uv run lerobot/src/lerobot/data_processing/sarm_annotations/subtask_annotation.py \
+#       --repo-id jhimmens/linique-v2 \
+#       --dense-only \
+#       --dense-subtasks "Bring robot arms up,Grab near side for 1st fold,Do 2nd fold,Do 3rd fold" \
+#       --video-key observation.images.left_top_cam
+#
+#   A single sparse "task" stage covering the full episode is auto-generated.
+#   The dense head learns detailed subtask progression while sparse provides
+#   overall task completion.
+#
+annotation_mode = "single_stage"
+
+# ── Dense subtask configuration ─────────────────────────────
+# Only used when annotation_mode = "dense_only". Ignored for "single_stage".
+#
+# dense_subtask_names: ordered list of subtask labels. Must match the subtasks
+#   passed to the annotation tool above.
+#
+# dense_temporal_proportions: expected fraction of episode duration each subtask
+#   occupies. Must be same length as dense_subtask_names and sum to 1.0.
+#   Used for target generation during training -- maps frame positions to
+#   stage + within-stage progress (tau) labels.
+#
+dense_subtask_names = [
+    "Bring robot arms up",
+    "Grab near side for 1st fold",
+    "Do 2nd fold",
+    "Do 3rd fold",
+]
+dense_temporal_proportions = [0.15, 0.35, 0.25, 0.25]
+
+# ── Camera/state keys ───────────────────────────────────────
+# Must match feature keys in the dataset.
+image_key = "observation.images.left_top_cam"
+state_key = "observation.state"
+
+# ── Architecture ────────────────────────────────────────────
+hidden_dim = 768
+num_heads = 12
+num_layers = 8
+n_obs_steps = 8        # Observation history: 8 -> samples 4 past + current + 4 future frames
+frame_gap = 30         # Gap between sampled frames (at 30fps = 1 second apart)
+max_rewind_steps = 4   # Temporal augmentation: rewinding for contrastive learning
+
+# ── Training ────────────────────────────────────────────────
+steps = 5000
+device = "cuda"
+
+# Video decoder backend: "torchcodec" (default) or "pyav" (use on HPC where torchcodec fails)
+video_backend = "pyav"
+
+# ── Checkpointing ──────────────────────────────────────────
+save_freq = 1000
+log_freq = 50
+
+# ── Weights & Biases ───────────────────────────────────────
+wandb_project = "linique-sarm"
+# wandb_entity = "your-team"  # Optional: W&B team/entity name
+
+[sarm.env.local]
+batch_size = 8
+
+[sarm.env.sockeye]
+batch_size = 32
