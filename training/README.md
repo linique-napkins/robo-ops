@@ -1,10 +1,11 @@
 # Training
 
-Two independent training pipelines for bimanual SO101 robot:
+Three training pipelines for bimanual SO101 robot:
 
 ```
 training/
 ├── act/     ACT action-chunking policy (predicts motor commands, runs on robot)
+├── pi0/     Pi0 vision-language-action policy (fine-tunes pretrained Pi0 via lerobot-train)
 └── sarm/    SARM reward model (predicts task progress 0→1, computes RA-BC weights)
 ```
 
@@ -26,7 +27,7 @@ training/
 └─────────────────────────────────┘     └──────────────────────────────────────┘
 ```
 
-See [act/README.md](act/README.md) and [sarm/README.md](sarm/README.md) for pipeline-specific docs.
+See [act/README.md](act/README.md), [pi0/README.md](pi0/README.md), and [sarm/README.md](sarm/README.md) for pipeline-specific docs.
 
 ---
 

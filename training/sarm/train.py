@@ -352,9 +352,10 @@ def main(  # noqa: PLR0912
             )
 
     # Create run-specific output directory using wandb run name or datetime
+    run_name = None
     if wandb_enabled and wandb.run is not None:
         run_name = wandb.run.name
-    else:
+    if not run_name:
         run_name = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
     output_dir = base_output_dir / run_name
     output_dir.mkdir(parents=True, exist_ok=True)

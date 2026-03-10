@@ -33,14 +33,15 @@ cd $REPO_DIR
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export WANDB_MODE=offline
+export WANDB_API_KEY=offline
 export HF_HUB_OFFLINE=1
 export HF_HOME=$SCRATCH/.cache/huggingface
 export TORCH_HOME=$SCRATCH/.cache/torch
 export WANDB_DIR=$SCRATCH/robo-ops
 
-# ── Pre-download CLIP weights (cached in TORCH_HOME) ───────
+# ── Pre-download CLIP weights (cached in HF_HOME) ──────────
 # SARM uses CLIP for image/text encoding. Pre-download on login node if needed:
-#   python -c "from transformers import CLIPModel, CLIPProcessor; CLIPModel.from_pretrained('openai/clip-vit-base-patch32'); CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')"
+#   uv run training/sarm/download_clip.py
 # Weights are cached at $HF_HOME/hub/models--openai--clip-vit-base-patch32/
 
 # ── Sync dataset from project storage (read-only) ──────────
@@ -56,7 +57,7 @@ ln -sfn "$PROJECT/datasets/$DATASET_NAME" "data/datasets/$DATASET_REPO_ID"
 mkdir -p $OUTPUT_DIR
 
 # ── GPU info ──────────────────────────────────────────────────
-nvidia-smi
+nvidia-smi --query-gpu=uuid --format=csv,noheader
 
 # ── Train SARM ─────────────────────────────────────────────
 # Pass TRAIN_STEPS env var to override steps (e.g. TRAIN_STEPS=5 for testing)

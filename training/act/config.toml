@@ -39,4 +39,4 @@ learning_rate = 1e-5
 
 [training.env.sockeye]
 batch_size = 38
-learning_rate = 4.75e-5
+learning_rate = 3e-5

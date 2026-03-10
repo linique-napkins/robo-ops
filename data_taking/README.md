@@ -37,6 +37,24 @@ Edit `data_taking/config.toml` to change recording settings:
 - `episode_time` - Duration of each episode (seconds)
 - `reset_time` - Time for environment reset between episodes
 
+## Pushing to Hugging Face Hub
+
+Upload the local dataset to HuggingFace:
+```bash
+uv run python -c "
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from pathlib import Path
+root = Path('data/datasets/jhimmens/linique-v2')
+ds = LeRobotDataset('jhimmens/linique-v2', root=root)
+ds.push_to_hub()
+"
+```
+
+Tag a specific version after pushing:
+```bash
+uv run huggingface-cli tag jhimmens/linique-v2 v1.0 --repo-type dataset
+```
+
 ## Recording Controls
 
 During recording:

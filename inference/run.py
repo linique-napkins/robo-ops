@@ -1,7 +1,7 @@
 """
-Inference script for running trained ACT policy on bimanual SO101 robot arms.
+Inference script for running a trained policy on bimanual SO101 robot arms.
 
-Loads a trained model from HuggingFace Hub and runs it on the robot in real-time.
+Loads a trained model (ACT, PI0, SmolVLA, etc.) and runs it on the robot in real-time.
 
 Usage:
     uv run inference/run.py
@@ -105,8 +105,8 @@ def main(
         help="Display visualization in Rerun",
     ),
 ) -> None:
-    """Run trained ACT policy on bimanual SO101 robot arms."""
-    typer.echo("\n=== ACT Policy Inference ===\n")
+    """Run trained policy on bimanual SO101 robot arms."""
+    typer.echo("\n=== Policy Inference ===\n")
 
     # Load global config for hardware settings
     config = load_config()
@@ -125,10 +125,6 @@ def main(
         display = inference_cfg["display"] and display
 
     print_inference_config(config, inference_cfg)
-
-    if not typer.confirm("\nProceed with inference?"):
-        typer.echo("Inference cancelled.")
-        raise typer.Exit(0)
 
     # Apply camera exposure settings (v4l2 settings drift across reboots/reconnects)
     typer.echo("\nApplying camera exposure settings...")

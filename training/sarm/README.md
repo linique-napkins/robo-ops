@@ -106,14 +106,38 @@ batch_size = 8
 batch_size = 32
 ```
 
-## CLIP Pre-download (Sockeye)
+## Sockeye
 
-Compute nodes have no internet. Pre-download on the login node:
+### On your server (has internet)
 
 ```bash
-python -c "from transformers import CLIPModel, CLIPProcessor; \
-    CLIPModel.from_pretrained('openai/clip-vit-base-patch32'); \
-    CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')"
+# Sync dataset to Sockeye project storage
+rsync -avzP data/datasets/jhimmens/linique-v2 \
+    jhimmens@dtn.sockeye.arc.ubc.ca:/arc/project/ss-engineeringphysics-1/2617-Napkin-Folding/datasets/
+
+# Sync repo to scratch
+rsync -avzP --exclude data/ --exclude .venv/ --exclude wandb/ \
+    . jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/robo-ops/
+
+# Pull training outputs back after training
+rsync -avzP jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/training_outputs/sarm/ \
+    data/outputs/jhimmens_linique-sarm-sockeye/
+
+# Pull wandb offline runs and sync
+rsync -avzP jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/robo-ops/wandb/offline-run-* \
+    wandb/
+uv run wandb sync wandb/offline-run-*
+```
+
+### On the Sockeye login node
+
+```bash
+cd /scratch/ss-engineeringphysics-1/$USER/robo-ops
+source $HOME/venvs/robo-ops/bin/activate
+uv sync --active
+
+# Pre-download CLIP weights (compute nodes have no internet)
+uv run training/sarm/download_clip.py
 ```
 
 ### Submit
@@ -123,3 +147,20 @@ sbatch --test-only training/sarm/arc_train.sh              # dry run
 TRAIN_STEPS=5 sbatch --time=0:15:00 training/sarm/arc_train.sh  # quick test
 sbatch training/sarm/arc_train.sh                          # full training
 ```
+
+### Monitor
+
+```bash
+squeue -u $USER
+tail -f /scratch/ss-engineeringphysics-1/$USER/training_outputs/sarm-output-<jobid>.txt
+
+# After training: copy to project storage (scratch gets purged!)
+cp -r /scratch/ss-engineeringphysics-1/$USER/training_outputs/sarm \
+    /arc/project/ss-engineeringphysics-1/2617-Napkin-Folding/models/
+```
+
+## Troubleshooting
+
+**OOM** — SARM is lighter than ACT (CLIP encoder is frozen). `batch_size = 32` should fit on V100-32GB. If OOM, reduce `batch_size` in `config.toml` under `[sarm.env.sockeye]`.
+
+**wandb fails to sync** — Compute nodes have no internet. `arc_train.sh` uses `WANDB_MODE=offline`. Sync from login node: `wandb sync wandb/offline-run-*`.
