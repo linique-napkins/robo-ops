@@ -44,10 +44,14 @@ rsync -avzP --exclude data/ --exclude .venv/ --exclude wandb/ \
 rsync -avzP jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/training_outputs/pi0/ \
     data/outputs/jhimmens_linique-pi0-sockeye/
 
-# Pull wandb offline runs and sync
-rsync -avzP jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/robo-ops/wandb/offline-run-* \
+# Pull wandb offline runs and sync (wandb dirs are inside each training output)
+rsync -avzP jhimmens@dtn.sockeye.arc.ubc.ca:/scratch/ss-engineeringphysics-1/jhimmens/training_outputs/pi0/*/wandb/offline-run-* \
     wandb/
 uv run wandb sync wandb/offline-run-*
+
+# on sockeye you can also run
+uv run --active wandb sync /scratch/ss-engineeringphysics-1/jhimmens/training_outputs/pi0/**/wandb/offline-run-*
+
 ```
 
 ### On the Sockeye login node
@@ -85,8 +89,12 @@ cp -r /scratch/ss-engineeringphysics-1/$USER/training_outputs/pi0 \
 
 ## Troubleshooting
 
-**OOM** — Pi0 is much larger than ACT (~3B params). On V100-32GB, start with small batch sizes. Use `--policy.grad_checkpoint=true` to trade compute for memory. If still OOM, consider LoRA fine-tuning with `--peft.type=lora`.
+**OOM (system RAM)** — The script requests `--mem=64G` from Slurm. Pi0 loads the full model in float32 on CPU before moving to GPU, so 32G is not enough.
 
-**wandb fails to sync** — Compute nodes have no internet. `arc_train.sh` uses `WANDB_MODE=offline`. Sync from login node: `wandb sync wandb/offline-run-*`.
+**OOM (GPU)** — Pi0 is ~3B params. `arc_train.sh` enables LoRA (`--peft.method_type=LORA --peft.r=16`), gradient checkpointing, frozen vision encoder, and AMP (`--policy.use_amp=true`). This should fit on a V100-32GB at batch_size=1.
 
-**Slow training** — Pi0 is ~300x larger than ACT. Expect slower steps. Use `--policy.use_amp=true` for mixed precision on V100.
+**wandb fails to sync** — Compute nodes have no internet. `arc_train.sh` uses `WANDB_MODE=offline`. Sync from your server after pulling runs back via rsync (see above).
+
+**Video decoding errors** — Sockeye's `torchcodec` may not support AV1. The script uses `--dataset.video_backend=pyav` which relies on the system FFmpeg (`module load ffmpeg/6.0`).
+
+**Slow training** — Pi0 is ~300x larger than ACT. Expect slower steps. AMP is enabled by default in the script.

@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --constraint=gpu_mem_32
 #SBATCH --time=24:00:00
 #SBATCH --gpus=1
@@ -38,7 +38,8 @@ export WANDB_CACHE_DIR=$SCRATCH/.cache/wandb
 export HF_HUB_OFFLINE=1
 export HF_HOME=$SCRATCH/.cache/huggingface
 export TORCH_HOME=$SCRATCH/.cache/torch
-export WANDB_DIR=$SCRATCH/robo-ops
+export WANDB_DIR=$OUTPUT_DIR
+export WANDB_DATA_DIR=$SCRATCH/.cache/wandb
 
 # ── Pre-download Pi0 weights (cached in HF_HOME) ───────────
 # Pi0 uses PaliGemma + Gemma. Pre-download on login node if needed:
@@ -64,11 +65,20 @@ TRAIN_ARGS=(
     --policy.path=lerobot/pi0_base
     --dataset.repo_id=$DATASET_REPO_ID
     --dataset.root=data/datasets/$DATASET_REPO_ID
+    --dataset.video_backend=pyav
     --output_dir=$OUTPUT_DIR
     --policy.push_to_hub=false
+    --policy.gradient_checkpointing=true
+    --policy.freeze_vision_encoder=true
+    --batch_size=1
+    --save_freq=1000
     --wandb.enable=true
     --wandb.project=linique-pi0
     --wandb.mode=offline
+    --policy.use_amp=true
+    --peft.method_type=LORA
+    --peft.r=16
+    --rename_map='{"observation.images.left_top_cam": "observation.images.base_0_rgb", "observation.images.left_left_cam": "observation.images.left_wrist_0_rgb", "observation.images.left_right_cam": "observation.images.right_wrist_0_rgb"}'
 )
 
 # Optional: RA-BC weighting from SARM reward model
@@ -84,5 +94,16 @@ fi
 if [ -n "$TRAIN_STEPS" ]; then
     TRAIN_ARGS+=(--steps=$TRAIN_STEPS)
 fi
+
+# Multi-GPU FSDP (commented out — use LoRA instead for OOM)
+# accelerate launch \
+#     --num_processes=2 \
+#     --use_fsdp \
+#     --fsdp_auto_wrap_policy=TRANSFORMER_BASED_WRAP \
+#     --fsdp_sharding_strategy=FULL_SHARD \
+#     --fsdp_backward_prefetch=BACKWARD_PRE \
+#     --fsdp_state_dict_type=SHARDED_STATE_DICT \
+#     --mixed_precision=bf16 \
+#     $(which lerobot-train) "${TRAIN_ARGS[@]}"
 
 lerobot-train "${TRAIN_ARGS[@]}"

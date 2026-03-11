@@ -5,7 +5,7 @@ description = "Training Data Collection and Robot Operations Libraries"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "lerobot[feetech,phone,sarm,pi]",
+    "lerobot[feetech,phone,sarm,pi,peft]",
     "wandb>=0.21.4",
     "typer>=0.15.0",
     "opencv-python>=4.10.0",
