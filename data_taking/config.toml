@@ -3,9 +3,9 @@
 
 [recording]
 # Hugging Face dataset repository ID
-repo_id = "jhimmens/linique-v2"
+repo_id = "jhimmens/linique-v2-pickup"
 # Task description for the recording
-task = "full-fold-v1"
+task = "pickup"
 # Number of episodes to record
 num_episodes = 50
 # Duration of each episode in seconds

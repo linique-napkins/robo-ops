@@ -2,7 +2,7 @@
 
 [inference]
 # Trained policy to load (HuggingFace repo ID or local path)
-policy_repo_id = "data/outputs/jhimmens_linique-act-v2/soft-resonance-3/checkpoint-84939-interrupted"
+policy_repo_id = "data/outputs/jhimmens_linique-act-v2/pretty-elevator-4/final"
 
 # Dataset used for training (needed for feature definitions)
 dataset_repo_id = "jhimmens/linique-v2"
