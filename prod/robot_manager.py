@@ -1,0 +1,223 @@
+"""
+Robot lifecycle management, state machine, and control thread coordination.
+
+Owns the robot object, camera configs, state machine, the synchronous 30fps
+control thread, and the shared JPEG frame buffer for camera streaming.
+"""
+
+import threading
+import time
+from enum import Enum
+
+import cv2
+import numpy as np
+from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
+from lerobot.utils.robot_utils import precise_sleep
+
+from lib.config import get_camera_config
+from lib.config import load_config
+from lib.robots import get_bimanual_follower
+from lib.stow import stow
+from lib.stow import stow_and_disconnect
+
+
+class State(Enum):
+    DISCONNECTED = "disconnected"
+    IDLE = "idle"
+    REPLAYING = "replaying"
+    INFERRING = "inferring"
+    TELEOP = "teleop"
+    STOWING = "stowing"
+
+
+class RobotManager:
+    """Manages robot lifecycle, state transitions, and the control thread."""
+
+    def __init__(self):
+        self.state = State.DISCONNECTED
+        self.robot = None
+        self._operation = None
+        self._config: dict | None = None
+        self._cameras_cfg: dict | None = None
+        self._camera_key_set: set[str] = set()
+
+        # Frame buffer: camera_name ("left", "right", "top") -> JPEG bytes
+        self._frame_buffer: dict[str, bytes] = {}
+        self._frame_lock = threading.Lock()
+
+        # Control thread
+        self._control_thread: threading.Thread | None = None
+        self._running = False
+
+        # Callback for state change broadcast (set by server.py)
+        self.on_state_change = None
+
+    def _set_state(self, new_state: State) -> None:
+        self.state = new_state
+        if self.on_state_change:
+            self.on_state_change(self.get_state())
+
+    def get_state(self) -> dict:
+        return {
+            "state": self.state.value,
+            "paused": self._operation.paused if self._operation else False,
+            "operation": self._operation.name if self._operation else None,
+        }
+
+    def get_latest_frame(self, camera: str) -> bytes | None:
+        """Get the latest JPEG frame for a camera, or None if unavailable."""
+        with self._frame_lock:
+            return self._frame_buffer.get(camera)
+
+    def get_camera_names(self) -> list[str]:
+        """Return configured camera names (e.g. ['left', 'right', 'top'])."""
+        return list(self._cameras_cfg.keys()) if self._cameras_cfg else []
+
+    async def connect(self) -> None:
+        """Connect to robot hardware and start the control loop."""
+        if self.state != State.DISCONNECTED:
+            raise RuntimeError(f"Cannot connect in state {self.state.value}")
+
+        self._config = load_config()
+
+        # Validate follower ports (leader is on a separate machine)
+        for arm in ["left", "right"]:
+            port = self._config.get("follower", {}).get(arm, {}).get("port")
+            if not port:
+                raise ValueError(f"No port configured for {arm} follower in config.toml")
+
+        self._cameras_cfg = get_camera_config(self._config)
+        self._camera_key_set = {f"{name}_cam" for name in self._cameras_cfg}
+
+        camera_configs = {}
+        for name, cam in self._cameras_cfg.items():
+            camera_configs[f"{name}_cam"] = OpenCVCameraConfig(
+                index_or_path=cam["path"],
+                width=cam["width"],
+                height=cam["height"],
+                fps=cam["fps"],
+                fourcc=cam["fourcc"],
+            )
+
+        self.robot = get_bimanual_follower(self._config, cameras=camera_configs)
+        self.robot.connect(calibrate=False)
+
+        self._start_control_thread()
+        self._set_state(State.IDLE)
+
+    async def disconnect(self) -> None:
+        """Stop operations, stow, and disconnect robot."""
+        if self.state == State.DISCONNECTED:
+            return
+
+        if self._operation:
+            await self.stop_operation()
+
+        self._stop_control_thread()
+
+        if self.robot and self.robot.is_connected:
+            stow_and_disconnect(self.robot)
+
+        self.robot = None
+        self._frame_buffer.clear()
+        self._set_state(State.DISCONNECTED)
+
+    async def start_operation(self, operation, target_state: State) -> None:
+        """Start a new operation (replay, inference, or teleop)."""
+        if self.state != State.IDLE:
+            raise RuntimeError(f"Cannot start operation in state {self.state.value}")
+
+        self._operation = operation
+        self._operation.setup(self.robot)
+        self._set_state(target_state)
+
+    async def stop_operation(self) -> None:
+        """Stop the current operation and return to IDLE."""
+        if not self._operation:
+            return
+        self._operation.teardown()
+        self._operation = None
+        if self.state != State.DISCONNECTED:
+            self._set_state(State.IDLE)
+
+    async def stow_robot(self) -> None:
+        """Stow arms to safe position."""
+        if self.state == State.DISCONNECTED:
+            raise RuntimeError("Robot not connected")
+
+        if self._operation:
+            await self.stop_operation()
+
+        self._set_state(State.STOWING)
+
+        # Pause control loop so stow() can use the USB bus exclusively
+        self._stop_control_thread()
+        stow(self.robot)
+        self._start_control_thread()
+
+        self._set_state(State.IDLE)
+
+    async def toggle_pause(self) -> bool:
+        """Toggle pause on the active operation. Returns new paused state."""
+        if not self._operation:
+            return False
+        self._operation.paused = not self._operation.paused
+        if self.on_state_change:
+            self.on_state_change(self.get_state())
+        return self._operation.paused
+
+    def _start_control_thread(self) -> None:
+        self._running = True
+        self._control_thread = threading.Thread(target=self._control_loop, daemon=True)
+        self._control_thread.start()
+
+    def _stop_control_thread(self) -> None:
+        self._running = False
+        if self._control_thread:
+            self._control_thread.join(timeout=3.0)
+            self._control_thread = None
+
+    def _control_loop(self) -> None:
+        """Synchronous 30fps control loop running in a dedicated thread.
+
+        Thread 2 in the architecture:
+        - robot.get_observation() -> joints + camera numpy arrays
+        - operation.step() -> action (varies by mode)
+        - robot.send_action(action)
+        - JPEG-encode camera frames -> write to shared frame buffer
+        """
+        fps = 30
+        while self._running:
+            loop_start = time.perf_counter()
+            try:
+                obs = self.robot.get_observation()
+                self._update_frame_buffer(obs)
+
+                if self._operation and not self._operation.paused:
+                    action = self._operation.step(obs)
+                    if action:
+                        self.robot.send_action(action)
+
+                    if getattr(self._operation, "finished", False):
+                        self._operation.teardown()
+                        self._operation = None
+                        self._set_state(State.IDLE)
+
+            except Exception as e:
+                print(f"Control loop error: {e}")
+
+            dt = time.perf_counter() - loop_start
+            precise_sleep(max(1 / fps - dt, 0.0))
+
+    def _update_frame_buffer(self, obs: dict) -> None:
+        """Extract camera frames from observation and JPEG encode to buffer."""
+        for obs_key, value in obs.items():
+            if not isinstance(value, np.ndarray) or value.ndim != 3:
+                continue
+            base_key = obs_key.split(".")[0]
+            if base_key not in self._camera_key_set:
+                continue
+            camera_name = base_key.replace("_cam", "")
+            _, jpeg = cv2.imencode(".jpg", value, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            with self._frame_lock:
+                self._frame_buffer[camera_name] = jpeg.tobytes()

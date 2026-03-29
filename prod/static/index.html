@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SO101 Demo</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+            background: #1a1a2e; color: #e0e0e0;
+        }
+
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 20px; background: #16213e; border-bottom: 1px solid #0f3460;
+        }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .state-badge {
+            padding: 4px 14px; border-radius: 12px; font-size: 13px;
+            font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .state-disconnected { background: #4a4a4a; }
+        .state-idle { background: #0f3460; }
+        .state-replaying { background: #1a6b3c; }
+        .state-inferring { background: #6b1a6b; }
+        .state-teleop { background: #6b4a1a; }
+        .state-stowing { background: #6b6b1a; }
+
+        .cameras {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 8px; padding: 12px;
+        }
+        .camera-feed {
+            position: relative; background: #0a0a1a; border-radius: 8px; overflow: hidden;
+        }
+        .camera-feed img {
+            width: 100%; display: block; aspect-ratio: 4/3;
+            object-fit: cover; background: #111;
+        }
+        .camera-feed .label {
+            position: absolute; top: 8px; left: 8px;
+            background: rgba(0,0,0,0.6); padding: 2px 8px;
+            border-radius: 4px; font-size: 12px; font-weight: 500;
+        }
+
+        .controls {
+            padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 8px;
+        }
+        .panel {
+            background: #16213e; border-radius: 8px; padding: 12px;
+            flex: 1; min-width: 180px;
+        }
+        .panel h3 {
+            font-size: 11px; margin-bottom: 8px; color: #8888aa;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+
+        select, button {
+            font-size: 14px; padding: 8px 14px; border: none; border-radius: 6px;
+            cursor: pointer; font-family: inherit;
+        }
+        select {
+            background: #0f3460; color: #e0e0e0; width: 100%; margin-bottom: 8px;
+            -webkit-appearance: none; appearance: none;
+        }
+
+        .btn {
+            background: #0f3460; color: #e0e0e0;
+            margin-right: 4px; margin-bottom: 4px;
+            transition: background 0.15s;
+        }
+        .btn:hover { background: #1a4a8a; }
+        .btn:active { background: #0a2a5a; }
+        .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .btn-connect { background: #1a6b3c; }
+        .btn-connect:hover { background: #2a8b4c; }
+        .btn-danger { background: #6b1a1a; }
+        .btn-danger:hover { background: #8b2a2a; }
+        .btn-warn { background: #6b4a1a; }
+        .btn-warn:hover { background: #8b6a2a; }
+        .btn-active { background: #1a6b3c; }
+
+        .status-bar {
+            padding: 8px 20px; font-size: 12px; color: #666;
+            border-top: 1px solid #0f3460;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>SO101 Demo</h1>
+        <span id="state-badge" class="state-badge state-disconnected">disconnected</span>
+    </div>
+
+    <div class="cameras">
+        <div class="camera-feed">
+            <img id="cam-left" alt="Left camera">
+            <span class="label">Left</span>
+        </div>
+        <div class="camera-feed">
+            <img id="cam-top" alt="Top camera">
+            <span class="label">Top</span>
+        </div>
+        <div class="camera-feed">
+            <img id="cam-right" alt="Right camera">
+            <span class="label">Right</span>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="panel">
+            <h3>Connection</h3>
+            <button id="btn-connect" class="btn btn-connect" onclick="doConnect()">Connect</button>
+            <button id="btn-disconnect" class="btn btn-danger" onclick="doDisconnect()" disabled>Disconnect</button>
+            <button id="btn-stow" class="btn btn-warn" onclick="doStow()" disabled>Stow</button>
+            <button id="btn-pause" class="btn" onclick="doTogglePause()" disabled>Pause</button>
+        </div>
+
+        <div class="panel">
+            <h3>Demo Replay</h3>
+            <select id="sel-recording"><option value="">Select recording...</option></select>
+            <button id="btn-replay" class="btn" onclick="doStartReplay()" disabled>Play</button>
+            <button id="btn-replay-loop" class="btn" onclick="doStartReplay(true)" disabled>Loop</button>
+            <button id="btn-replay-stop" class="btn btn-danger" onclick="doStopReplay()" disabled>Stop</button>
+        </div>
+
+        <div class="panel">
+            <h3>Policy Inference</h3>
+            <select id="sel-model"><option value="">Select model...</option></select>
+            <button id="btn-infer" class="btn" onclick="doStartInference()" disabled>Start</button>
+            <button id="btn-infer-stop" class="btn btn-danger" onclick="doStopInference()" disabled>Stop</button>
+        </div>
+
+        <div class="panel">
+            <h3>Remote Teleop</h3>
+            <button id="btn-teleop" class="btn" onclick="doStartTeleop()" disabled>Start</button>
+            <button id="btn-teleop-stop" class="btn btn-danger" onclick="doStopTeleop()" disabled>Stop</button>
+        </div>
+    </div>
+
+    <div class="status-bar" id="status-bar">Ready</div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
