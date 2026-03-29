@@ -19,3 +19,6 @@ wheels/
 data/
 outputs
 wandb/
+
+# Frontend
+frontend/node_modules/
