@@ -14,6 +14,7 @@ from lib.config import get_local_dataset_path
 from lib.config import get_recording_config
 from lib.config import load_config
 from lib.config import validate_config
+from lib.policy import load_policy_stack
 from lib.robots import get_bimanual_follower
 from lib.robots import get_bimanual_leader
 from lib.robots import get_single_follower
@@ -38,6 +39,7 @@ __all__ = [
     "get_single_follower",
     "get_single_leader",
     "load_config",
+    "load_policy_stack",
     "stow",
     "stow_and_disconnect",
     "stow_leader",

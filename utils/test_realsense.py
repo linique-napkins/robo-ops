@@ -121,8 +121,9 @@ def main() -> None:
     # --- Configure and start pipeline ---
     usb_type = dev_info.get("usb_type_descriptor", "3")
     if usb_type.startswith("2"):
-        print(f"\nERROR: RealSense D435I is on USB {usb_type} — streaming requires USB 3.0+.")
-        print("Please plug it into a USB 3.0 port (blue insert / marked 'SS').")
+        print(f"\nERROR: RealSense D435I is on USB {usb_type} — cannot stream over USB 2.x.")
+        print("The D435I requires USB 3.0+ for all video (including RGB-only).")
+        print("Use a USB 3.0 cable and plug into a USB 3.0 port (blue insert / marked 'SS').")
         sys.exit(1)
 
     pipeline = rs.pipeline()
@@ -192,7 +193,6 @@ def main() -> None:
     print("\nStreaming... Press 'q' to quit.\n")
 
     # --- Info lines for overlay ---
-    usb_type = dev_info.get('usb_type_descriptor', '?')
     info_lines = [
         f"{dev_info.get('name', '?')} | SN: {serial}",
         f"FW: {dev_info.get('firmware_version', '?')} | USB {usb_type}"

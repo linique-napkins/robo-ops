@@ -236,7 +236,7 @@ class RobotManager:
                         bgr = cv2.rotate(bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
                     elif camera_name == "top":
                         bgr = cv2.rotate(bgr, cv2.ROTATE_180)
-                    _, jpeg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    _, jpeg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 50])
                     with self._frame_lock:
                         self._frame_buffer[camera_name] = jpeg.tobytes()
                     break

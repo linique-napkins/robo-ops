@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 async def mjpeg_stream(
     get_frame: Callable[[], bytes | None],
-    fps: int = 30,
+    fps: int = 15,
 ) -> AsyncGenerator[bytes]:
     """Async generator that yields MJPEG frames for multipart streaming.
 

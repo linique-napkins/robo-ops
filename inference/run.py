@@ -15,26 +15,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import torch
 import typer
-from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
-from lerobot.configs.policies import PreTrainedConfig
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-from lerobot.datasets.utils import build_dataset_frame
-from lerobot.policies.factory import make_policy
-from lerobot.policies.factory import make_pre_post_processors
+from lerobot.datasets.feature_utils import build_dataset_frame
 from lerobot.policies.utils import make_robot_action
-from lerobot.processor import make_default_processors
 from lerobot.utils.constants import OBS_STR
 from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.control_utils import predict_action
+from lerobot.utils.device_utils import get_safe_torch_device
 from lerobot.utils.robot_utils import precise_sleep
-from lerobot.utils.utils import get_safe_torch_device
 from lerobot.utils.utils import log_say
 
 from lib.config import get_camera_config
-from lib.config import get_local_dataset_path
 from lib.config import get_urdf_config
 from lib.config import load_config
 from lib.config import validate_config
+from lib.policy import load_policy_stack
+from lib.robots import build_camera_configs
 from lib.robots import get_bimanual_follower
 from lib.stow import stow_and_disconnect
 from lib.urdf_viz import init_rerun_with_urdf
@@ -94,7 +89,11 @@ def print_inference_config(config: dict, inference_cfg: dict) -> None:
     typer.echo(f"  Right Follower: {config['follower']['right']['port']}")
     typer.echo("  Cameras:")
     for name, cam in cameras.items():
-        typer.echo(f"    {name}: {cam['path']} ({cam['width']}x{cam['height']} @ {cam['fps']}fps)")
+        res = f"{cam['width']}x{cam['height']} @ {cam['fps']}fps"
+        if cam["type"] == "realsense":
+            typer.echo(f"    {name}: RealSense {cam['serial_number']} ({res})")
+        else:
+            typer.echo(f"    {name}: {cam['path']} ({res})")
 
 
 @app.command()
@@ -127,8 +126,11 @@ def main(
     print_inference_config(config, inference_cfg)
 
     # Apply camera exposure settings (v4l2 settings drift across reboots/reconnects)
+    # Skip RealSense cameras — v4l2 controls don't apply to them
     typer.echo("\nApplying camera exposure settings...")
     for name, cam in cameras_cfg.items():
+        if cam["type"] == "realsense":
+            continue
         device_path = Path(cam["path"]).resolve()
         configure_exposure(str(device_path), name)
 
@@ -136,53 +138,26 @@ def main(
     device = get_device(inference_cfg["device"])
     typer.echo(f"\nUsing device: {device}")
 
-    # Load policy from HuggingFace Hub
+    # Load policy, processors, and dataset metadata via shared loader
     typer.echo(f"\nLoading policy from: {inference_cfg['policy_repo_id']}")
-    policy_cfg = PreTrainedConfig.from_pretrained(inference_cfg["policy_repo_id"])
-    policy_cfg.pretrained_path = inference_cfg["policy_repo_id"]
-
-    # Enable temporal ensembling for smoother actions across chunk boundaries.
-    # Requires n_action_steps=1 so the policy runs every step.
-    temporal_ensemble_coeff = inference_cfg["temporal_ensemble_coeff"]
-    if temporal_ensemble_coeff is not None:
-        typer.echo(f"  Temporal ensembling enabled (coeff={temporal_ensemble_coeff})")
-        policy_cfg.temporal_ensemble_coeff = temporal_ensemble_coeff
-        policy_cfg.n_action_steps = 1
-
-    # Load dataset for features (needed to build observation frames)
-    # Uses local data/datasets/ path, falling back to HuggingFace Hub download
-    dataset_repo_id = inference_cfg["dataset_repo_id"]
-    local_path = get_local_dataset_path(dataset_repo_id)
-    typer.echo(f"Loading dataset metadata from: {dataset_repo_id}")
-    dataset = LeRobotDataset(dataset_repo_id, root=local_path)
-
-    # Create policy
-    typer.echo("Creating policy model...")
-    policy = make_policy(cfg=policy_cfg, ds_meta=dataset.meta)
-    policy.eval()
-    policy.reset()
-    policy.to(device)
-
-    # Create processors
-    preprocessor, postprocessor = make_pre_post_processors(
-        policy_cfg=policy_cfg,
-        pretrained_path=policy_cfg.pretrained_path,
-        dataset_stats=dataset.meta.stats,
+    (
+        policy,
+        policy_cfg,
+        preprocessor,
+        postprocessor,
+        dataset,
+        robot_action_processor,
+        robot_observation_processor,
+    ) = load_policy_stack(
+        policy_repo_id=inference_cfg["policy_repo_id"],
+        dataset_repo_id=inference_cfg["dataset_repo_id"],
+        device=inference_cfg["device"],
+        temporal_ensemble_coeff=inference_cfg["temporal_ensemble_coeff"],
     )
-
-    # Create robot observation/action processors
-    _, robot_action_processor, robot_observation_processor = make_default_processors()
+    typer.echo("Policy loaded.")
 
     # Build camera configs for robot
-    camera_configs = {}
-    for name, cam in cameras_cfg.items():
-        camera_configs[f"{name}_cam"] = OpenCVCameraConfig(
-            index_or_path=cam["path"],
-            width=cam["width"],
-            height=cam["height"],
-            fps=cam["fps"],
-            fourcc=cam["fourcc"],
-        )
+    camera_configs = build_camera_configs(cameras_cfg)
 
     # Initialize robot using factory function
     typer.echo("\nInitializing robot...")

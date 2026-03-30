@@ -122,23 +122,28 @@ def get_camera_config(config: dict, camera_name: str | None = None) -> dict:
     camera_section = config["camera"]
 
     def get_single_camera(cam_cfg: dict) -> dict:
-        return {
-            "path": cam_cfg["path"],
+        cam_type = cam_cfg.get("type", "opencv")
+        base = {
+            "type": cam_type,
             "width": cam_cfg["width"],
             "height": cam_cfg["height"],
             "fps": cam_cfg["fps"],
-            "fourcc": cam_cfg.get("fourcc"),
         }
+        if cam_type == "realsense":
+            base["serial_number"] = cam_cfg["serial_number"]
+        else:
+            base["path"] = cam_cfg["path"]
+            base["fourcc"] = cam_cfg.get("fourcc")
+        return base
 
     # If specific camera requested
     if camera_name:
         return get_single_camera(camera_section[camera_name])
 
-    # Return all cameras
+    # Return all cameras — iterate dynamically, not hardcoded
     cameras = {}
-    for name in ["top", "left", "right"]:
-        if name in camera_section:
-            cameras[name] = get_single_camera(camera_section[name])
+    for name, cam_cfg in camera_section.items():
+        cameras[name] = get_single_camera(cam_cfg)
 
     return cameras
 

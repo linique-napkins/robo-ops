@@ -6,6 +6,8 @@ Calibration files are stored in the repo at calibration/{role}/.
 """
 
 from lerobot.cameras import CameraConfig
+from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
+from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig
 from lerobot.robots.bi_so_follower import BiSOFollower
 from lerobot.robots.bi_so_follower import BiSOFollowerConfig
 from lerobot.robots.so_follower import SO101Follower
@@ -18,6 +20,28 @@ from lerobot.teleoperators.so_leader import SO101LeaderConfig
 from lerobot.teleoperators.so_leader import SOLeaderConfig
 
 from lib.config import get_calibration_dir
+
+
+def build_camera_configs(cameras_cfg: dict) -> dict[str, CameraConfig]:
+    """Build LeRobot camera configs from our config.toml camera dict."""
+    configs: dict[str, CameraConfig] = {}
+    for name, cam in cameras_cfg.items():
+        if cam.get("type") == "realsense":
+            configs[f"{name}_cam"] = RealSenseCameraConfig(
+                serial_number_or_name=cam["serial_number"],
+                fps=cam["fps"],
+                width=cam["width"],
+                height=cam["height"],
+            )
+        else:
+            configs[f"{name}_cam"] = OpenCVCameraConfig(
+                index_or_path=cam["path"],
+                fps=cam["fps"],
+                width=cam["width"],
+                height=cam["height"],
+                fourcc=cam.get("fourcc"),
+            )
+    return configs
 
 
 def get_bimanual_follower(

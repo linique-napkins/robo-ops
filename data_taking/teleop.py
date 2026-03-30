@@ -15,13 +15,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.utils.robot_utils import precise_sleep
 
 from lib.config import get_camera_config
 from lib.config import get_urdf_config
 from lib.config import load_config
 from lib.config import validate_config
+from lib.robots import build_camera_configs
 from lib.robots import get_bimanual_follower
 from lib.robots import get_bimanual_leader
 from lib.stow import stow_and_disconnect
@@ -94,14 +94,12 @@ def main() -> None:  # noqa: PLR0912
         cameras_cfg = get_camera_config(config)
         print("  Cameras:")
         for name, cam in cameras_cfg.items():
-            print(f"    {name}: {cam['path']} ({cam['width']}x{cam['height']} @ {cam['fps']}fps)")
-            camera_configs[f"{name}_cam"] = OpenCVCameraConfig(
-                index_or_path=cam["path"],
-                width=cam["width"],
-                height=cam["height"],
-                fps=cam["fps"],
-                fourcc=cam["fourcc"],
-            )
+            res = f"{cam['width']}x{cam['height']} @ {cam['fps']}fps"
+            if cam["type"] == "realsense":
+                print(f"    {name}: RealSense {cam['serial_number']} ({res})")
+            else:
+                print(f"    {name}: {cam['path']} ({res})")
+        camera_configs = build_camera_configs(cameras_cfg)
 
     # Create robot and teleoperator using factory functions
     robot = get_bimanual_follower(config, cameras=camera_configs if camera_configs else None)
