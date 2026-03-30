@@ -13,6 +13,8 @@ import asyncio
 import json
 import sys
 import tomllib
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -63,9 +65,16 @@ class _AppState:
 
 _app = _AppState()
 
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG001
+    _app.event_loop = asyncio.get_running_loop()
+    yield
+
+
 # --- App Setup ---
 
-app = FastAPI(title="SO101 Demo Server")
+app = FastAPI(title="SO101 Demo Server", lifespan=lifespan)
 manager = RobotManager()
 
 
@@ -91,11 +100,6 @@ def _handle_state_change(state_dict: dict) -> None:
 
 
 manager.on_state_change = _handle_state_change
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    _app.event_loop = asyncio.get_running_loop()
 
 
 # --- Static Files / Frontend ---

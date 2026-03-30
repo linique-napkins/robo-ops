@@ -25,7 +25,7 @@ from lerobot.utils.constants import ACTION
 from lerobot.utils.constants import OBS_STR
 from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.control_utils import predict_action
-from lerobot.utils.utils import get_safe_torch_device
+from lerobot.utils.device_utils import get_safe_torch_device
 from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.utils import TimerManager
 from lerobot.utils.utils import log_say
