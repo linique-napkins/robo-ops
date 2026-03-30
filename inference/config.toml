@@ -23,3 +23,9 @@ display = true
 # Set to null/remove to disable. 0.01 is the ACT paper default.
 # Requires inference every step, so ensure your device can handle it.
 temporal_ensemble_coeff = 0.01
+
+# Record inference data as a LeRobot dataset
+record = false
+
+# Repository ID for recorded data (defaults to {dataset_repo_id}-inference)
+# record_repo_id = "jhimmens/linique-v2-inference"

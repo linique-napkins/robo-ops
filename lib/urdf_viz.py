@@ -11,6 +11,7 @@ since rr.urdf is not available in rerun-sdk < 0.28.
 import datetime
 import math
 import os
+import time
 import traceback
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -501,6 +502,45 @@ class BimanualURDFVisualizer:
 # Global visualizer instance
 _global_visualizer: BimanualURDFVisualizer | None = None
 _global_rrd_path: Path | None = None
+_frame_counter = 0
+
+JOINT_NAMES = [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow_flex",
+    "wrist_flex",
+    "wrist_roll",
+    "gripper",
+]
+
+
+def reset_frame_counter() -> None:
+    """Reset the frame counter (call at the start of each episode/session)."""
+    global _frame_counter  # noqa: PLW0603
+    _frame_counter = 0
+
+
+def log_joint_scalars(
+    observation: dict | None = None,
+    action: dict | None = None,
+) -> None:
+    """Log joint positions as scalars for time-series overlay (actual vs commanded).
+
+    Logs to entity paths:
+        joints/{side}/{joint}/actual      — observation (blue)
+        joints/{side}/{joint}/commanded   — action (orange)
+    """
+    for side in ["left", "right"]:
+        for joint in JOINT_NAMES:
+            key = f"{side}_{joint}.pos"
+            if observation and key in observation:
+                val = observation[key]
+                val = float(val.item()) if hasattr(val, "item") else float(val)
+                rr.log(f"joints/{side}/{joint}/actual", rr.Scalars(val))
+            if action and key in action:
+                val = action[key]
+                val = float(val.item()) if hasattr(val, "item") else float(val)
+                rr.log(f"joints/{side}/{joint}/commanded", rr.Scalars(val))
 
 
 def get_global_visualizer() -> BimanualURDFVisualizer | None:
@@ -564,7 +604,7 @@ def init_rerun_with_urdf(
     global _global_visualizer, _global_rrd_path  # noqa: PLW0603
 
     if camera_names is None:
-        camera_names = ["top", "left", "right"]
+        camera_names = []
 
     batch_size = os.getenv("RERUN_FLUSH_NUM_BYTES", "8000")
     os.environ["RERUN_FLUSH_NUM_BYTES"] = batch_size
@@ -575,16 +615,17 @@ def init_rerun_with_urdf(
     # Use recording_id so multiple sessions show up in the same viewer
     rr.init(session_name, recording_id=str(_global_rrd_path.stem))
 
-    # Save to file first — must be called before logging any data.
-    # Data will be written to both the file and the viewer simultaneously.
-    rr.save(_global_rrd_path)
-
     memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
 
+    # Set up dual sinks: file + viewer. spawn(connect=False) launches the viewer
+    # without replacing the recording sink, then set_sinks() attaches both.
     if ip and port:
-        rr.connect_grpc(url=f"rerun+http://{ip}:{port}/proxy")
+        grpc_sink = rr.GrpcSink(url=f"rerun+http://{ip}:{port}/proxy")
     else:
-        rr.spawn(memory_limit=memory_limit)
+        rr.spawn(connect=False, memory_limit=memory_limit)
+        grpc_sink = rr.GrpcSink()
+
+    rr.set_sinks(rr.FileSink(str(_global_rrd_path)), grpc_sink)
 
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
 
@@ -599,24 +640,46 @@ def init_rerun_with_urdf(
     if visualizer.initialize():
         _global_visualizer = visualizer
 
+        # Style joint series (static — only needs to be set once)
+        for side in ["left", "right"]:
+            for joint in JOINT_NAMES:
+                rr.log(
+                    f"joints/{side}/{joint}/actual",
+                    rr.SeriesLines(colors=[[0, 120, 255]], names=["actual"]),
+                    static=True,
+                )
+                rr.log(
+                    f"joints/{side}/{joint}/commanded",
+                    rr.SeriesLines(colors=[[255, 80, 0]], names=["commanded"]),
+                    static=True,
+                )
+
         # Build camera image views
         camera_views = [
             rrb.Spatial2DView(name=f"{name.capitalize()} Camera", origin=f"cameras/{name}")
             for name in camera_names
         ]
 
-        # Create layout with cameras on the right side
+        # Per-joint time series views (6 per arm = 12 total)
+        left_joint_views = [
+            rrb.TimeSeriesView(name=f"L {j}", origin=f"joints/left/{j}") for j in JOINT_NAMES
+        ]
+        right_joint_views = [
+            rrb.TimeSeriesView(name=f"R {j}", origin=f"joints/right/{j}") for j in JOINT_NAMES
+        ]
+
+        # Layout: 3D URDF on left, cameras + joint plots on right
         blueprint = rrb.Horizontal(
             rrb.Spatial3DView(name="Robot Arms", origin="world"),
             rrb.Vertical(
-                rrb.Horizontal(*camera_views) if camera_views else rrb.TextDocumentView(),
+                rrb.Grid(*camera_views, grid_columns=2) if camera_views else rrb.TextDocumentView(),
                 rrb.Horizontal(
-                    rrb.TimeSeriesView(name="Left Arm Joints", origin="joints/left"),
-                    rrb.TimeSeriesView(name="Right Arm Joints", origin="joints/right"),
+                    rrb.Vertical(*left_joint_views),
+                    rrb.Vertical(*right_joint_views),
                 ),
-                row_shares=[2, 1],
+                row_shares=[2, 3],
             ),
-            column_shares=[1, 1],
+            column_shares=[1, 2],
         )
         rr.send_blueprint(blueprint)
 
@@ -721,16 +784,17 @@ def log_observation_and_action(
     use_degrees: bool = True,
 ) -> None:
     """Log observation and action data to Rerun, including URDF joint updates and camera images."""
+    global _frame_counter  # noqa: PLW0603
+
+    rr.set_time("step", sequence=_frame_counter)
+    rr.set_time("wall_clock", timestamp=time.time())
+    _frame_counter += 1
+
     if visualizer is not None and observation is not None:
         visualizer.log_robot_state(observation, use_degrees=use_degrees)
 
-    # Log camera images
     log_camera_images(observation)
-
-    # Import here to avoid circular imports (lerobot's visualization_utils imports this)
-    from lerobot.utils.visualization_utils import log_rerun_data  # noqa: PLC0415
-
-    log_rerun_data(observation=observation, action=action)
+    log_joint_scalars(observation=observation, action=action)
 
 
 def log_urdf_state(observation: dict | None = None, use_degrees: bool = True) -> None:

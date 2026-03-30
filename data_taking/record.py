@@ -47,6 +47,7 @@ from lib.stow import stow
 from lib.stow import stow_and_disconnect
 from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_camera_images
+from lib.urdf_viz import log_joint_scalars
 from lib.urdf_viz import log_urdf_state
 from lib.urdf_viz import save_rrd
 from utils.find_cameras import configure_exposure
@@ -460,15 +461,13 @@ def main(  # noqa: PLR0912
             # Patch record_loop's log function to also feed URDF viz + camera views
             import lerobot.scripts.lerobot_record as _record_mod  # noqa: PLC0415
 
-            _orig_log = _record_mod.log_rerun_data
-
-            def _patched_log(observation=None, action=None, **kwargs):
-                _orig_log(observation=observation, action=action, **kwargs)
+            def _patched_log(observation=None, action=None, **kwargs):  # noqa: ARG001
                 if observation:
                     log_urdf_state(observation)
                     log_camera_images(observation)
                     if idle_detector:
                         idle_detector.update(observation)
+                log_joint_scalars(observation=observation, action=action)
 
             _record_mod.log_rerun_data = _patched_log
 
