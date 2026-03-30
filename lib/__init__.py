@@ -14,7 +14,11 @@ from lib.config import get_local_dataset_path
 from lib.config import get_recording_config
 from lib.config import load_config
 from lib.config import validate_config
-from lib.policy import load_policy_stack
+
+def load_policy_stack(*args, **kwargs):
+    from lib.policy import load_policy_stack as _load
+
+    return _load(*args, **kwargs)
 from lib.robots import get_bimanual_follower
 from lib.robots import get_bimanual_leader
 from lib.robots import get_single_follower

@@ -10,8 +10,10 @@ Usage:
 
 import asyncio
 import json
+import ssl
 import sys
 import time
+import urllib.request
 import webbrowser
 from pathlib import Path
 
@@ -26,6 +28,55 @@ from lib.robots import get_bimanual_leader
 from lib.stow import stow_leader
 
 app = typer.Typer()
+
+# Tailscale certs may not be in the system trust store, so we skip verification
+# for the private tailnet. Traffic is already encrypted and authenticated by Tailscale.
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
+
+
+def _api_request(server: str, path: str, method: str = "POST") -> dict:
+    """Make an HTTP request to a server API endpoint and return the JSON response."""
+    url = f"https://{server}{path}"
+    data = b"" if method == "POST" else None
+    req = urllib.request.Request(url, method=method, data=data)
+    try:
+        with urllib.request.urlopen(req, context=_ssl_ctx) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = json.loads(e.read())
+        return body
+
+
+def _ensure_server_ready(server: str) -> None:
+    """Ensure the server robot is connected and in teleop mode."""
+    # Check current state
+    state = _api_request(server, "/api/state", method="GET")
+    current = state.get("state", "disconnected")
+
+    # Connect robot if needed
+    if current == "disconnected":
+        typer.echo("Server robot disconnected — connecting...")
+        resp = _api_request(server, "/api/connect")
+        if not resp.get("ok"):
+            typer.echo(f"Server failed to connect robot: {resp.get('error', 'unknown')}")
+            raise typer.Exit(1)
+        typer.echo("Server robot connected.")
+        current = "idle"
+
+    # Stop any existing operation to get back to idle
+    if current not in ("idle", "teleop"):
+        typer.echo(f"Server is {current} — stopping current operation...")
+        _api_request(server, "/api/teleop/stop")
+        current = "idle"
+
+    # Start teleop if not already active
+    if current != "teleop":
+        resp = _api_request(server, "/api/teleop/start")
+        if not resp.get("ok"):
+            typer.echo(f"Server rejected teleop start: {resp.get('error', 'unknown')}")
+            raise typer.Exit(1)
 
 
 @app.command()
@@ -47,11 +98,26 @@ def main(
     if open_browser:
         webbrowser.open(f"https://{server}/")
 
+    # Ensure server robot is connected and in teleop mode
+    typer.echo("Starting teleop mode on server...")
+    try:
+        _ensure_server_ready(server)
+    except urllib.error.URLError as e:
+        typer.echo(f"Failed to reach server: {e}")
+        raise typer.Exit(1)
+    typer.echo("Server teleop mode active.")
+
     try:
         asyncio.run(_send_loop(teleop, server, fps))
     except KeyboardInterrupt:
         typer.echo("\nStopping...")
     finally:
+        # Stop teleop mode on the server
+        try:
+            _api_request(server, "/api/teleop/stop")
+            typer.echo("Server teleop mode stopped.")
+        except Exception:
+            typer.echo("Warning: could not stop teleop on server.")
         stow_leader(teleop)
         if teleop.is_connected:
             teleop.disconnect()
@@ -69,7 +135,7 @@ async def _send_loop(teleop, server: str, fps: int) -> None:
     while True:
         try:
             typer.echo(f"Connecting to {uri}...")
-            async with websockets.connect(uri) as ws:
+            async with websockets.connect(uri, ssl=_ssl_ctx) as ws:
                 typer.echo(f"WebSocket connected. Sending leader positions at {fps}Hz...")
                 backoff = 1.0
                 step = 0

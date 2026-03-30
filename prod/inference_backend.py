@@ -8,7 +8,7 @@ from lerobot.datasets.feature_utils import build_dataset_frame
 from lerobot.policies.utils import make_robot_action
 from lerobot.utils.constants import OBS_STR
 from lerobot.utils.control_utils import predict_action
-from lerobot.utils.device_utils import get_safe_torch_device
+from lerobot.utils.utils import get_safe_torch_device
 
 from lib.policy import load_policy_stack
 

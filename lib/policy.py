@@ -9,7 +9,7 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.policies.factory import make_policy
 from lerobot.policies.factory import make_pre_post_processors
 from lerobot.processor import make_default_processors
-from lerobot.utils.device_utils import get_safe_torch_device
+from lerobot.utils.utils import get_safe_torch_device
 
 from lib.config import get_local_dataset_path
 
