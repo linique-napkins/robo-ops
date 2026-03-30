@@ -8,17 +8,19 @@ control thread, and the shared JPEG frame buffer for camera streaming.
 import threading
 import time
 from enum import Enum
+from pathlib import Path
 
 import cv2
 import numpy as np
-from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.utils.robot_utils import precise_sleep
 
 from lib.config import get_camera_config
 from lib.config import load_config
+from lib.robots import build_camera_configs
 from lib.robots import get_bimanual_follower
 from lib.stow import stow
 from lib.stow import stow_and_disconnect
+from utils.find_cameras import configure_exposure
 
 
 class State(Enum):
@@ -39,7 +41,6 @@ class RobotManager:
         self._operation = None
         self._config: dict | None = None
         self._cameras_cfg: dict | None = None
-        self._camera_key_set: set[str] = set()
 
         # Frame buffer: camera_name ("left", "right", "top") -> JPEG bytes
         self._frame_buffer: dict[str, bytes] = {}
@@ -87,20 +88,27 @@ class RobotManager:
                 raise ValueError(f"No port configured for {arm} follower in config.toml")
 
         self._cameras_cfg = get_camera_config(self._config)
-        self._camera_key_set = {f"{name}_cam" for name in self._cameras_cfg}
 
-        camera_configs = {}
+        # Apply v4l2 exposure settings for OpenCV cameras (skip RealSense)
         for name, cam in self._cameras_cfg.items():
-            camera_configs[f"{name}_cam"] = OpenCVCameraConfig(
-                index_or_path=cam["path"],
-                width=cam["width"],
-                height=cam["height"],
-                fps=cam["fps"],
-                fourcc=cam["fourcc"],
-            )
+            if cam["type"] == "realsense":
+                continue
+            device = Path(cam["path"]).resolve()
+            configure_exposure(str(device), name)
+
+        camera_configs = build_camera_configs(self._cameras_cfg)
 
         self.robot = get_bimanual_follower(self._config, cameras=camera_configs)
-        self.robot.connect(calibrate=False)
+        try:
+            self.robot.connect(calibrate=False)
+        except Exception:
+            # Clean up partially-opened cameras/motors so retry works
+            try:
+                self.robot.disconnect()
+            except Exception:
+                pass
+            self.robot = None
+            raise
 
         self._start_control_thread()
         self._set_state(State.IDLE)
@@ -209,15 +217,26 @@ class RobotManager:
             dt = time.perf_counter() - loop_start
             precise_sleep(max(1 / fps - dt, 0.0))
 
+    # Arm cameras are mounted sideways — rotate 90° CW for human-aligned view
+    _ROTATE_CAMERAS = {"left", "right"}
+
     def _update_frame_buffer(self, obs: dict) -> None:
-        """Extract camera frames from observation and JPEG encode to buffer."""
+        """Extract camera frames from observation and JPEG encode to buffer.
+
+        Observation keys may be prefixed with arm name (e.g. 'left_top_cam'
+        instead of 'top_cam'), so we match by suffix.
+        """
         for obs_key, value in obs.items():
             if not isinstance(value, np.ndarray) or value.ndim != 3:
                 continue
-            base_key = obs_key.split(".")[0]
-            if base_key not in self._camera_key_set:
-                continue
-            camera_name = base_key.replace("_cam", "")
-            _, jpeg = cv2.imencode(".jpg", value, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            with self._frame_lock:
-                self._frame_buffer[camera_name] = jpeg.tobytes()
+            for camera_name in self._cameras_cfg:
+                if obs_key.endswith(f"{camera_name}_cam"):
+                    bgr = cv2.cvtColor(value, cv2.COLOR_RGB2BGR)
+                    if camera_name in self._ROTATE_CAMERAS:
+                        bgr = cv2.rotate(bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                    elif camera_name == "top":
+                        bgr = cv2.rotate(bgr, cv2.ROTATE_180)
+                    _, jpeg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    with self._frame_lock:
+                        self._frame_buffer[camera_name] = jpeg.tobytes()
+                    break

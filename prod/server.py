@@ -15,7 +15,6 @@ import sys
 import tomllib
 from pathlib import Path
 
-import uvicorn
 from fastapi import FastAPI
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
@@ -298,7 +297,11 @@ if FRONTEND_DIR.exists():
         file = FRONTEND_DIR / path
         if file.exists() and file.is_file():
             return FileResponse(str(file))
-        return FileResponse(str(FRONTEND_DIR / "index.html"))
+        # No-cache so browser always gets latest index.html after rebuilds
+        return FileResponse(
+            str(FRONTEND_DIR / "index.html"),
+            headers={"Cache-Control": "no-cache"},
+        )
 
 else:
 
@@ -310,9 +313,21 @@ else:
 # --- Entry Point ---
 
 if __name__ == "__main__":
+    import asyncio
+
+    from hypercorn.asyncio import serve
+    from hypercorn.config import Config as HyperConfig
+
     server_cfg = prod_config.get("server", {})
-    uvicorn.run(
-        app,
-        host=server_cfg.get("host", "0.0.0.0"),
-        port=server_cfg.get("port", 8000),
-    )
+    hconfig = HyperConfig()
+    hconfig.bind = [f"{server_cfg.get('host', '0.0.0.0')}:{server_cfg.get('port', 8000)}"]
+
+    # TLS + HTTP/2 via Tailscale certs
+    cert_dir = PROD_DIR / "certs"
+    cert_file = cert_dir / "nvd-compute.crt"
+    key_file = cert_dir / "nvd-compute.key"
+    if cert_file.exists() and key_file.exists():
+        hconfig.certfile = str(cert_file)
+        hconfig.keyfile = str(key_file)
+
+    asyncio.run(serve(app, hconfig))

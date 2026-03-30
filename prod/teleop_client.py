@@ -30,7 +30,7 @@ app = typer.Typer()
 
 @app.command()
 def main(
-    server: str = typer.Option(..., "--server", "-s", help="Server address (host:port)"),
+    server: str = typer.Option("nvd-compute.tail6bd9d.ts.net:8000", "--server", "-s", help="Server address (host:port)"),
     fps: int = typer.Option(30, "--fps", help="Send rate in Hz"),
     open_browser: bool = typer.Option(
         True, "--browser/--no-browser", help="Open server UI in browser"
@@ -45,7 +45,7 @@ def main(
     typer.echo("Leader arms connected.")
 
     if open_browser:
-        webbrowser.open(f"http://{server}/")
+        webbrowser.open(f"https://{server}/")
 
     try:
         asyncio.run(_send_loop(teleop, server, fps))
@@ -59,26 +59,37 @@ def main(
 
 
 async def _send_loop(teleop, server: str, fps: int) -> None:
-    """Read leader arms and stream positions to the server over WebSocket."""
-    uri = f"ws://{server}/ws/teleop"
-    typer.echo(f"Connecting to {uri}...")
+    """Read leader arms and stream positions to the server over WebSocket.
 
-    async with websockets.connect(uri) as ws:
-        typer.echo("WebSocket connected. Sending leader positions at {fps}Hz...")
-        step = 0
-        while True:
-            loop_start = time.perf_counter()
+    Auto-reconnects on connection loss with exponential backoff.
+    """
+    uri = f"wss://{server}/ws/teleop"
+    backoff = 1.0
 
-            action = teleop.get_action()
-            positions = {k: float(v) for k, v in action.items()}
-            await ws.send(json.dumps({"positions": positions}))
+    while True:
+        try:
+            typer.echo(f"Connecting to {uri}...")
+            async with websockets.connect(uri) as ws:
+                typer.echo(f"WebSocket connected. Sending leader positions at {fps}Hz...")
+                backoff = 1.0
+                step = 0
+                while True:
+                    loop_start = time.perf_counter()
 
-            step += 1
-            if step % fps == 0:
-                typer.echo(f"  Streaming... {step // fps}s")
+                    action = teleop.get_action()
+                    positions = {k: float(v) for k, v in action.items()}
+                    await ws.send(json.dumps({"positions": positions}))
 
-            dt = time.perf_counter() - loop_start
-            precise_sleep(max(1 / fps - dt, 0.0))
+                    step += 1
+                    if step % fps == 0:
+                        typer.echo(f"  Streaming... {step // fps}s")
+
+                    dt = time.perf_counter() - loop_start
+                    precise_sleep(max(1 / fps - dt, 0.0))
+        except (websockets.ConnectionClosed, OSError) as e:
+            typer.echo(f"Connection lost: {e}. Reconnecting in {backoff:.0f}s...")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 10.0)
 
 
 if __name__ == "__main__":

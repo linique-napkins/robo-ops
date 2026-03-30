@@ -12,6 +12,8 @@ dependencies = [
     "numpy>=2.0.0",
     "trimesh>=4.0.0",
     "pyrealsense2>=2.55.1 ; sys_platform == 'linux'",
+    "hypercorn>=0.18.0",
+    "h2>=4.3.0",
 ]
 
 [tool.uv.sources]
@@ -19,6 +21,14 @@ lerobot = { path = "lerobot", editable = true }
 
 # Scripts are run directly with `uv run <path>` rather than installed commands
 # e.g., `uv run training/train.py` or `uv run inference/run.py`
+
+[project.optional-dependencies]
+prod = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "httpx>=0.28.0",
+    "websockets>=14.0",
+]
 
 [dependency-groups]
 dev = [

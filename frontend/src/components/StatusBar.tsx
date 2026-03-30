@@ -7,7 +7,7 @@ interface StatusBarProps {
 
 export function StatusBar({ message, wsConnected }: StatusBarProps) {
   return (
-    <div className="flex h-7 shrink-0 items-center justify-between border-t px-5 text-xs text-muted-foreground">
+    <div className="flex h-7 shrink-0 items-center justify-between border-t bg-white px-5 text-xs text-muted-foreground">
       <span>{message}</span>
       <span
         className={cn(

@@ -32,7 +32,7 @@ export function ReplayPanel({
         <Select
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
-          className="mb-2"
+          className="mb-1.5"
         >
           <option value="">Select recording...</option>
           {recordings.map((r) => (

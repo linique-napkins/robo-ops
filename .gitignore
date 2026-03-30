@@ -22,3 +22,6 @@ wandb/
 
 # Frontend
 frontend/node_modules/
+
+# TLS certs
+prod/certs/

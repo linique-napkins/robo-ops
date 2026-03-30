@@ -1,12 +1,17 @@
 import type { ApiResponse, RobotState } from "@/lib/types.ts";
 
 async function request(method: string, path: string): Promise<ApiResponse> {
-  const res = await fetch(`/api/${path}`, { method });
+  const res = await fetch(`/api/${path}`, {
+    method,
+    signal: AbortSignal.timeout(15000),
+  });
   return (await res.json()) as ApiResponse;
 }
 
 export async function fetchState(): Promise<RobotState> {
-  const res = await fetch("/api/state");
+  const res = await fetch("/api/state", {
+    signal: AbortSignal.timeout(5000),
+  });
   return (await res.json()) as RobotState;
 }
 

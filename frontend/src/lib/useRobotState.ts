@@ -1,4 +1,4 @@
-import { useCallback, useRef, useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import * as api from "@/lib/api.ts";
 import { DEFAULT_STATE } from "@/lib/types.ts";
 import type { ApiResponse, RobotState } from "@/lib/types.ts";
@@ -13,6 +13,7 @@ let currentState: RobotState = { ...DEFAULT_STATE };
 let wsConnected = false;
 let statusMessage = "Ready";
 let inflight = false;
+let camTs: number | null = null;
 
 const listeners = new Set<Listener>();
 
@@ -22,6 +23,11 @@ function notify() {
 
 function setState(next: RobotState) {
   currentState = next;
+  notify();
+}
+
+function mergeState(partial: Partial<RobotState>) {
+  currentState = { ...currentState, ...partial };
   notify();
 }
 
@@ -64,8 +70,8 @@ function connectWs() {
 
   socket.onmessage = (e: MessageEvent) => {
     try {
-      const data = JSON.parse(e.data as string) as RobotState;
-      setState(data);
+      const data = JSON.parse(e.data as string) as Partial<RobotState>;
+      mergeState(data);
     } catch {
       // ignore malformed
     }
@@ -116,7 +122,7 @@ async function doAction(
   if (label) setStatus(label);
   try {
     const data = await fn();
-    if (data.state) setState(data.state as RobotState);
+    if (data.state) mergeState(data.state as Partial<RobotState>);
     if (!data.ok && data.error) setStatus(`Error: ${data.error}`);
     return data.ok;
   } catch (e) {
@@ -141,6 +147,9 @@ function boot() {
     .then((s) => {
       setState(s);
       if (s.state !== "disconnected") {
+        // Set camTs only if not already set (avoid duplicate streams
+        // when connect callback already set it)
+        if (camTs === null) camTs = Date.now();
         connectWs();
       }
     })
@@ -156,6 +165,7 @@ interface Snapshot {
   wsConnected: boolean;
   status: string;
   inflight: boolean;
+  camTs: number | null;
 }
 
 let cachedSnapshot: Snapshot = {
@@ -163,6 +173,7 @@ let cachedSnapshot: Snapshot = {
   wsConnected,
   status: statusMessage,
   inflight,
+  camTs,
 };
 
 function getSnapshot(): Snapshot {
@@ -171,13 +182,14 @@ function getSnapshot(): Snapshot {
     wsConnected,
     status: statusMessage,
     inflight,
+    camTs,
   };
-  // Only return a new reference if something actually changed
   if (
     cachedSnapshot.state !== next.state ||
     cachedSnapshot.wsConnected !== next.wsConnected ||
     cachedSnapshot.status !== next.status ||
-    cachedSnapshot.inflight !== next.inflight
+    cachedSnapshot.inflight !== next.inflight ||
+    cachedSnapshot.camTs !== next.camTs
   ) {
     cachedSnapshot = next;
   }
@@ -196,14 +208,12 @@ function subscribe(cb: Listener): () => void {
 
 export function useRobotState() {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot);
-  // Stable camera timestamp ref (set once on connect)
-  const camTsRef = useRef<number | null>(null);
 
   const actions = {
     connect: useCallback(async () => {
       const ok = await doAction(() => api.connect(), "Connecting to robot...");
       if (ok) {
-        camTsRef.current = Date.now();
+        camTs = Date.now();
         connectWs();
         setStatus("Connected");
       }
@@ -215,7 +225,7 @@ export function useRobotState() {
         "Disconnecting...",
       );
       if (ok) {
-        camTsRef.current = null;
+        camTs = null;
         disconnectWs();
         setStatus("Disconnected");
       }
@@ -274,7 +284,6 @@ export function useRobotState() {
 
   return {
     ...snapshot,
-    camTs: camTsRef.current,
     api: actions,
   };
 }

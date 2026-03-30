@@ -26,8 +26,11 @@ export function Header({ state, paused, operation }: HeaderProps) {
   if (paused) label += " [PAUSED]";
 
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b px-5">
-      <h1 className="text-base font-semibold tracking-tight">SO101 Demo</h1>
+    <header className="flex h-12 shrink-0 items-center justify-between border-b bg-white px-5">
+      <div className="flex items-baseline gap-3">
+        <span className="text-2xl font-bold tracking-tight">linique</span>
+        <h1 className="text-sm font-medium text-muted-foreground">Dashboard</h1>
+      </div>
       <Badge variant={badge.variant}>{label}</Badge>
     </header>
   );
