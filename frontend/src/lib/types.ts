@@ -11,7 +11,7 @@ export interface RobotState {
   paused: boolean;
   operation: string | null;
   available_models: Record<string, string>;
-  available_recordings: string[];
+  available_recordings: Record<string, string>;
   available_cameras: string[];
 }
 
@@ -27,6 +27,6 @@ export const DEFAULT_STATE: RobotState = {
   paused: false,
   operation: null,
   available_models: {},
-  available_recordings: [],
+  available_recordings: {},
   available_cameras: [],
 };

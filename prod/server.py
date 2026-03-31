@@ -32,6 +32,7 @@ from camera_stream import mjpeg_stream
 from inference_backend import LocalInference
 from inference_backend import RemoteInference
 from operations import InferenceOperation
+from operations import LocalTeleopOperation
 from operations import ReplayOperation
 from operations import TeleopOperation
 from robot_manager import RobotManager
@@ -75,7 +76,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None]:  # noqa: ARG00
 # --- App Setup ---
 
 app = FastAPI(title="SO101 Demo Server", lifespan=lifespan)
-manager = RobotManager()
+manager = RobotManager(rerun_config=prod_config.get("rerun", {}))
 
 
 async def broadcast_state(state_dict: dict) -> None:
@@ -125,9 +126,12 @@ async def get_state():
     for key, cfg in prod_config.get("models", {}).items():
         models[key] = cfg.get("display_name", key)
 
-    recordings = []
+    recording_names = prod_config.get("recordings", {})
+    recordings = {}
     if RECORDINGS_DIR.exists():
-        recordings = sorted(p.stem for p in RECORDINGS_DIR.glob("*.json"))
+        for p in sorted(RECORDINGS_DIR.glob("*.json"), key=lambda p: p.stem):
+            key = p.stem
+            recordings[key] = recording_names.get(key, key)
 
     state = manager.get_state()
     state["available_models"] = models
@@ -227,10 +231,14 @@ async def stop_inference(model: str):  # noqa: ARG001
 
 
 @app.post("/api/teleop/start")
-async def start_teleop():
+async def start_teleop(mode: str = "remote"):
     try:
-        _app.teleop_op = TeleopOperation()
-        await manager.start_operation(_app.teleop_op, State.TELEOP)
+        if mode == "local":
+            op = LocalTeleopOperation(manager._config)
+        else:
+            op = TeleopOperation()
+            _app.teleop_op = op
+        await manager.start_operation(op, State.TELEOP)
         return {"ok": True, "state": manager.get_state()}
     except Exception as e:
         _app.teleop_op = None

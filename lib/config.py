@@ -94,10 +94,15 @@ def load_config(config_path: Path | None = None) -> dict:
         return tomllib.load(f)
 
 
-def validate_config(config: dict) -> None:
-    """Validate that all required hardware ports are configured."""
+def validate_config(config: dict, roles: list[str] | None = None) -> None:
+    """Validate that all required hardware ports are configured.
+
+    Args:
+        config: Full configuration dictionary.
+        roles: Which roles to validate (e.g. ["follower"]). Defaults to all.
+    """
     for arm in ["left", "right"]:
-        for role in ["leader", "follower"]:
+        for role in roles or ["leader", "follower"]:
             port = config.get(role, {}).get(arm, {}).get("port")
             if not port:
                 msg = f"No port configured for {arm} {role}. Please update config.toml."

@@ -8,7 +8,7 @@ import type { RobotStateName } from "@/lib/types.ts";
 interface ReplayPanelProps {
   state: RobotStateName;
   inflight: boolean;
-  recordings: string[];
+  recordings: Record<string, string>;
   onStartReplay: (name: string, loop: boolean) => void;
   onStopReplay: (name: string) => void;
 }
@@ -35,9 +35,9 @@ export function ReplayPanel({
           className="mb-1.5"
         >
           <option value="">Select recording...</option>
-          {recordings.map((r) => (
-            <option key={r} value={r}>
-              {r}
+          {Object.entries(recordings).map(([key, name]) => (
+            <option key={key} value={key}>
+              {name}
             </option>
           ))}
         </Select>

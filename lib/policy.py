@@ -19,6 +19,8 @@ def load_policy_stack(
     dataset_repo_id: str,
     device: str,
     temporal_ensemble_coeff: float | None = None,
+    n_action_steps: int | None = None,
+    rename_map: dict[str, str] | None = None,
 ) -> tuple:
     """Load trained policy, preprocessor, postprocessor, and dataset metadata.
 
@@ -27,6 +29,8 @@ def load_policy_stack(
         dataset_repo_id: Dataset repo ID for feature definitions.
         device: Torch device string ("cuda", "cpu", "mps").
         temporal_ensemble_coeff: Temporal ensemble coefficient, or None to disable.
+        rename_map: Optional mapping from robot observation keys to policy keys
+                    (e.g. camera name remapping).
 
     Returns:
         Tuple of (policy, policy_cfg, preprocessor, postprocessor, dataset,
@@ -38,19 +42,28 @@ def load_policy_stack(
     if temporal_ensemble_coeff is not None:
         policy_cfg.temporal_ensemble_coeff = temporal_ensemble_coeff
         policy_cfg.n_action_steps = 1
+    elif n_action_steps is not None:
+        policy_cfg.n_action_steps = n_action_steps
 
     local_path = get_local_dataset_path(dataset_repo_id)
     dataset = LeRobotDataset(dataset_repo_id, root=local_path)
 
-    policy = make_policy(cfg=policy_cfg, ds_meta=dataset.meta)
+    policy = make_policy(cfg=policy_cfg, ds_meta=dataset.meta, rename_map=rename_map or {})
     policy.eval()
     policy.reset()
     policy.to(get_safe_torch_device(device))
+
+    preprocessor_overrides = {}
+    if rename_map:
+        preprocessor_overrides["rename_observations_processor"] = {
+            "rename_map": rename_map,
+        }
 
     preprocessor, postprocessor = make_pre_post_processors(
         policy_cfg=policy_cfg,
         pretrained_path=policy_cfg.pretrained_path,
         dataset_stats=dataset.meta.stats,
+        preprocessor_overrides=preprocessor_overrides,
     )
 
     _, robot_action_processor, robot_observation_processor = make_default_processors()

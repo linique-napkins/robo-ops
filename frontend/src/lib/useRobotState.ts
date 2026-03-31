@@ -270,7 +270,8 @@ export function useRobotState() {
     ),
 
     startTeleop: useCallback(
-      () => doAction(() => api.startTeleop(), "Starting teleop..."),
+      (mode: string) =>
+        doAction(() => api.startTeleop(mode), `Starting teleop (${mode})...`),
       [],
     ),
 

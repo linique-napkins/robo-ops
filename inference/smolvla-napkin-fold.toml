@@ -1,0 +1,33 @@
+# SmolVLA Napkin Fold Inference Configuration
+
+[inference]
+# Trained policy to load
+policy_repo_id = "data/outputs/jhimmens_smolvla-napkin-fold"
+
+# Dataset used for training (needed for feature definitions)
+dataset_repo_id = "jhimmens/linique-v2"
+
+# Task description (should match training)
+task = "full-fold-v1"
+
+# Device (cuda, mps, cpu)
+device = "cuda"
+
+# Control frequency
+fps = 30
+
+# Visualization
+display = true
+
+# SmolVLA uses flow-matching, not temporal ensembling
+# temporal_ensemble_coeff is intentionally omitted
+
+# Record inference data as a LeRobot dataset
+record = true
+
+# Remap robot camera names to match policy training camera names
+# (mapping from train_config.json rename_map)
+[inference.rename_map]
+"observation.images.left_top_cam" = "observation.images.camera1"
+"observation.images.left_left_cam" = "observation.images.camera2"
+"observation.images.left_right_cam" = "observation.images.camera3"

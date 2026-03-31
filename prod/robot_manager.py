@@ -15,11 +15,15 @@ import numpy as np
 from lerobot.utils.robot_utils import precise_sleep
 
 from lib.config import get_camera_config
+from lib.config import get_urdf_config
 from lib.config import load_config
 from lib.robots import build_camera_configs
 from lib.robots import get_bimanual_follower
 from lib.stow import stow
 from lib.stow import stow_and_disconnect
+from lib.urdf_viz import init_rerun_with_urdf
+from lib.urdf_viz import log_observation_and_action
+from lib.urdf_viz import save_rrd
 from utils.find_cameras import configure_exposure
 
 
@@ -35,7 +39,7 @@ class State(Enum):
 class RobotManager:
     """Manages robot lifecycle, state transitions, and the control thread."""
 
-    def __init__(self):
+    def __init__(self, rerun_config: dict | None = None):
         self.state = State.DISCONNECTED
         self.robot = None
         self._operation = None
@@ -49,6 +53,10 @@ class RobotManager:
         # Control thread
         self._control_thread: threading.Thread | None = None
         self._running = False
+
+        # Rerun visualization
+        self._rerun_cfg = rerun_config or {}
+        self._visualizer = None
 
         # Callback for state change broadcast (set by server.py)
         self.on_state_change = None
@@ -110,6 +118,27 @@ class RobotManager:
             self.robot = None
             raise
 
+        # Initialize Rerun visualization if enabled
+        if self._rerun_cfg.get("enabled"):
+            try:
+                urdf_cfg = get_urdf_config(self._config)
+                self._visualizer = init_rerun_with_urdf(
+                    session_name="prod",
+                    ip=self._rerun_cfg.get("ip"),
+                    port=self._rerun_cfg.get("port"),
+                    urdf_path=urdf_cfg["path"],
+                    left_offset=urdf_cfg["left_offset"],
+                    right_offset=urdf_cfg["right_offset"],
+                    left_rotation_deg=urdf_cfg["left_rotation"],
+                    right_rotation_deg=urdf_cfg["right_rotation"],
+                    camera_names=list(self._cameras_cfg.keys()),
+                )
+                if self._visualizer:
+                    print("Rerun visualization initialized")
+            except Exception as e:
+                print(f"Rerun initialization failed (continuing without): {e}")
+                self._visualizer = None
+
         self._start_control_thread()
         self._set_state(State.IDLE)
 
@@ -125,6 +154,16 @@ class RobotManager:
 
         if self.robot and self.robot.is_connected:
             stow_and_disconnect(self.robot)
+
+        # Save Rerun recording
+        if self._visualizer:
+            try:
+                rrd_path = save_rrd()
+                if rrd_path:
+                    print(f"Rerun recording saved to: {rrd_path}")
+            except Exception as e:
+                print(f"Failed to save Rerun recording: {e}")
+            self._visualizer = None
 
         self.robot = None
         self._frame_buffer.clear()
@@ -201,6 +240,7 @@ class RobotManager:
                 obs = self.robot.get_observation()
                 self._update_frame_buffer(obs)
 
+                action = None
                 if self._operation and not self._operation.paused:
                     action = self._operation.step(obs)
                     if action:
@@ -210,6 +250,9 @@ class RobotManager:
                         self._operation.teardown()
                         self._operation = None
                         self._set_state(State.IDLE)
+
+                if self._visualizer:
+                    log_observation_and_action(self._visualizer, obs, action, use_degrees=True)
 
             except Exception as e:
                 print(f"Control loop error: {e}")

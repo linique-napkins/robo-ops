@@ -565,11 +565,21 @@ def get_rrd_path(session_name: str) -> Path:
 
 
 def save_rrd() -> Path | None:
-    """Return the path to the .rrd file being written.
+    """Flush all pending data to the .rrd file and return its path.
 
-    The file sink is set up in init_rerun_with_urdf() so data is written
-    continuously. This just returns the path for display purposes.
+    Must be called before process exit to ensure the file is complete.
     """
+    if _global_rrd_path is None:
+        return None
+
+    try:
+        rec = rr.get_global_data_recording()
+        if rec is not None:
+            rec.flush(timeout_sec=5.0)
+    except RuntimeError:
+        pass  # gRPC sink may not have connected (headless)
+    rr.disconnect()
+
     return _global_rrd_path
 
 

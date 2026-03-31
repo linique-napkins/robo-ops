@@ -37,9 +37,9 @@ def main(
         raise typer.Exit(1)
 
     config = load_config()
-    validate_config(config)
 
     if leaders:
+        validate_config(config, roles=["leader"])
         typer.echo("Connecting leader arms...")
         teleop = get_bimanual_leader(config)
         teleop.connect()
@@ -48,6 +48,7 @@ def main(
         typer.echo("Leader arms disconnected.")
 
     if followers:
+        validate_config(config, roles=["follower"])
         typer.echo("Connecting follower arms...")
         robot = get_bimanual_follower(config)
         robot.connect()

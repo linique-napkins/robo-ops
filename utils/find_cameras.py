@@ -30,7 +30,7 @@ from lib.config import CONFIG_PATH
 
 V4L_BY_PATH = Path("/dev/v4l/by-path")
 V4L_BY_ID = Path("/dev/v4l/by-id")
-CAMERA_ROLES = ["left", "right", "top"]
+CAMERA_ROLES = ["left", "right", "top", "angle_view"]
 WINDOW_NAME = "Camera Preview"
 
 
@@ -59,28 +59,29 @@ def get_stable_cameras() -> list[dict]:
             if "video-index0" in entry.name or entry.name.endswith("-index0"):
                 by_id_names[str(entry.resolve())] = entry.name
 
-    cameras = []
+    # Collect all primary capture endpoints, preferring the shorter "usb-" path
+    # over "usbv2-"/"usbv3-" when multiple symlinks resolve to the same device.
+    candidates: dict[str, tuple[str, str]] = {}  # target -> (path, name)
     for entry in sorted(V4L_BY_PATH.iterdir()):
-        # Only keep primary capture endpoints (video-index0), skip metadata nodes
         if not entry.name.endswith("-video-index0"):
-            continue
-        # Skip the usbv2/usbv3 duplicates — prefer the shorter "usb-" variant
-        if "-usbv2-" in entry.name or "-usbv3-" in entry.name:
             continue
 
         target = str(entry.resolve())
-        # Use by-id name if available for a friendlier display, fall back to by-path name
+        path = str(entry)
         display_name = by_id_names.get(target, entry.name)
 
-        cameras.append(
-            {
-                "path": str(entry),
-                "target": target,
-                "name": display_name,
-            }
-        )
+        if target in candidates:
+            # Keep the shorter (non-versioned) variant when both exist
+            existing_path = candidates[target][0]
+            if "-usbv2-" not in path and "-usbv3-" not in path:
+                candidates[target] = (path, display_name)
+        else:
+            candidates[target] = (path, display_name)
 
-    return cameras
+    return [
+        {"path": path, "target": target, "name": name}
+        for target, (path, name) in sorted(candidates.items())
+    ]
 
 
 def v4l2_get_controls(device: str) -> set[str]:

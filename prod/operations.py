@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Protocol
 from typing import runtime_checkable
 
+from lib.robots import get_bimanual_leader
+from lib.stow import stow_leader
+
 
 @runtime_checkable
 class Operation(Protocol):
@@ -135,3 +138,34 @@ class TeleopOperation:
             if self._latest_action is None:
                 return False
             return time.time() - self._last_receive_time <= self._timeout
+
+
+class LocalTeleopOperation:
+    """Reads leader arm positions locally and forwards them as actions.
+
+    Unlike TeleopOperation (which receives positions over WebSocket from a
+    remote client), this connects to leader arms plugged into the same machine.
+    """
+
+    name = "teleop-local"
+
+    def __init__(self, config: dict):
+        self._config = config
+        self._teleop = None
+        self.paused = False
+        self.finished = False
+
+    def setup(self, robot) -> None:  # noqa: ARG002
+        self._teleop = get_bimanual_leader(self._config)
+        self._teleop.connect(calibrate=False)
+
+    def step(self, observation: dict) -> dict | None:  # noqa: ARG002
+        if self._teleop:
+            return self._teleop.get_action()
+        return None
+
+    def teardown(self) -> None:
+        if self._teleop and self._teleop.is_connected:
+            stow_leader(self._teleop)
+            self._teleop.disconnect()
+        self._teleop = None

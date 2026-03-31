@@ -49,6 +49,7 @@ class LocalInference:
             dataset_repo_id=model_config["dataset_repo_id"],
             device=model_config.get("device", "cuda"),
             temporal_ensemble_coeff=model_config.get("temporal_ensemble_coeff"),
+            rename_map=model_config.get("rename_map"),
         )
         self._device = get_safe_torch_device(model_config.get("device", "cuda"))
         self._task = model_config.get("task", "")

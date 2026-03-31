@@ -8,6 +8,8 @@ Usage:
 """
 
 import contextlib
+import json
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -47,7 +49,8 @@ from utils.find_cameras import configure_exposure
 
 app = typer.Typer()
 
-LOCAL_CONFIG_PATH = Path(__file__).parent / "config.toml"
+INFERENCE_DIR = Path(__file__).parent
+DEFAULT_CONFIG = "config.toml"
 
 
 def get_device(device_str: str) -> torch.device:
@@ -76,8 +79,10 @@ def get_inference_config(config: dict) -> dict:
         "fps": inference["fps"],
         "display": inference["display"],
         "temporal_ensemble_coeff": inference.get("temporal_ensemble_coeff"),
+        "n_action_steps": inference.get("n_action_steps"),
         "record": inference.get("record", False),
         "record_repo_id": inference.get("record_repo_id"),
+        "rename_map": inference.get("rename_map", {}),
     }
 
 
@@ -111,6 +116,12 @@ def print_inference_config(config: dict, inference_cfg: dict) -> None:
 
 @app.command()
 def main(  # noqa: PLR0912
+    config_file: str = typer.Option(
+        DEFAULT_CONFIG,
+        "--config",
+        "-c",
+        help="Inference config file name in inference/ directory",
+    ),
     display: bool = typer.Option(
         True,
         "--display/--no-display",
@@ -135,7 +146,11 @@ def main(  # noqa: PLR0912
     validate_config(config)
 
     # Load local config for inference settings
-    local_config = load_config(LOCAL_CONFIG_PATH)
+    config_path = INFERENCE_DIR / config_file
+    if not config_path.exists():
+        typer.echo(f"Config file not found: {config_path}")
+        raise typer.Exit(1)
+    local_config = load_config(config_path)
     config.update(local_config)
 
     # Get configurations
@@ -180,6 +195,8 @@ def main(  # noqa: PLR0912
         dataset_repo_id=inference_cfg["dataset_repo_id"],
         device=inference_cfg["device"],
         temporal_ensemble_coeff=inference_cfg["temporal_ensemble_coeff"],
+        n_action_steps=inference_cfg.get("n_action_steps"),
+        rename_map=inference_cfg.get("rename_map"),
     )
     typer.echo("Policy loaded.")
 
@@ -199,27 +216,49 @@ def main(  # noqa: PLR0912
     # Set up recording dataset if enabled
     rec_dataset = None
     if record:
-        dataset_repo = inference_cfg["dataset_repo_id"]
-        rec_repo_id = inference_cfg["record_repo_id"] or f"{dataset_repo}-inference"
+        # Derive record repo from policy path for traceability
+        policy_name = Path(inference_cfg["policy_repo_id"]).name
+        rec_repo_id = inference_cfg["record_repo_id"] or f"{policy_name}-inference"
         rec_local_path = get_local_dataset_path(rec_repo_id)
 
-        # Extract non-default features from the training dataset
-        recording_features = {
-            k: v for k, v in dataset.features.items() if k not in DEFAULT_FEATURES
-        }
+        # Check if existing dataset has recorded episodes (can resume)
+        # or is a stale empty dir from a previous crash (must recreate)
+        info_path = rec_local_path / "meta" / "info.json"
+        has_episodes = False
+        if info_path.exists():
+            info = json.loads(info_path.read_text())
+            has_episodes = info.get("total_episodes", 0) > 0
 
-        typer.echo(f"\nCreating recording dataset: {rec_repo_id}")
-        rec_dataset = LeRobotDataset.create(
-            repo_id=rec_repo_id,
-            fps=fps,
-            root=rec_local_path,
-            robot_type=robot.name,
-            features=recording_features,
-            use_videos=True,
-            image_writer_processes=0,
-            image_writer_threads=4 * len(cameras_cfg),
-            streaming_encoding=True,
-        )
+        if has_episodes:
+            typer.echo(f"\nResuming recording dataset: {rec_repo_id}")
+            rec_dataset = LeRobotDataset(
+                repo_id=rec_repo_id,
+                root=rec_local_path,
+                streaming_encoding=True,
+            )
+            rec_dataset.start_image_writer(num_processes=0, num_threads=4 * len(cameras_cfg))
+            rec_dataset.episode_buffer = rec_dataset.create_episode_buffer()
+        else:
+            # Remove stale empty dataset dir from a previous crash
+            if rec_local_path.exists():
+                shutil.rmtree(rec_local_path)
+            # Extract non-default features from the training dataset
+            recording_features = {
+                k: v for k, v in dataset.features.items() if k not in DEFAULT_FEATURES
+            }
+
+            typer.echo(f"\nCreating recording dataset: {rec_repo_id}")
+            rec_dataset = LeRobotDataset.create(
+                repo_id=rec_repo_id,
+                fps=fps,
+                root=rec_local_path,
+                robot_type=robot.name,
+                features=recording_features,
+                use_videos=True,
+                image_writer_processes=0,
+                image_writer_threads=4 * len(cameras_cfg),
+                streaming_encoding=True,
+            )
 
         # Embed metadata for reproducibility
         git_info = get_git_info()
@@ -264,6 +303,10 @@ def main(  # noqa: PLR0912
         t_obs = TimerManager("obs", log=False)
         t_policy = TimerManager("policy", log=False)
         t_action = TimerManager("action", log=False)
+
+        dt = 1.0 / fps
+        next_tick = time.perf_counter() + dt
+        last_log_time = time.perf_counter()
 
         encoding_ctx = (
             VideoEncodingManager(rec_dataset) if rec_dataset else contextlib.nullcontext()
@@ -323,14 +366,17 @@ def main(  # noqa: PLR0912
 
                 step += 1
 
-                # Maintain target FPS
+                # Sync to exact target FPS using wall-clock schedule
                 t_loop.stop()
-                sleep_time = max(1.0 / fps - t_loop.last, 0.0)
-                precise_sleep(sleep_time)
+                now = time.perf_counter()
+                precise_sleep(max(next_tick - now, 0.0))
+                next_tick += dt
 
                 # Log control rate every second
                 if step % fps == 0:
-                    actual_hz = t_loop.fps_avg
+                    log_now = time.perf_counter()
+                    actual_hz = fps / (log_now - last_log_time)
+                    last_log_time = log_now
                     elapsed = time.time() - start_time
                     typer.echo(
                         f"  {elapsed:5.1f}s | {step} steps | "

@@ -67,7 +67,11 @@ async function doStopInference() {
     await api("POST", "infer/" + encodeURIComponent(model) + "/stop");
 }
 
-async function doStartTeleop() { await api("POST", "teleop/start"); }
+async function doStartTeleop() {
+    const mode = document.getElementById("sel-teleop-mode").value;
+    status("Starting teleop (" + mode + ")...");
+    await api("POST", "teleop/start?mode=" + mode);
+}
 async function doStopTeleop() { await api("POST", "teleop/stop"); }
 
 // --- State ---
@@ -106,27 +110,16 @@ function updateState(state) {
 
     // Populate dropdowns once
     if (state.available_recordings) populateSelect("sel-recording", state.available_recordings);
-    if (state.available_models) populateModelSelect("sel-model", state.available_models);
+    if (state.available_models) populateSelect("sel-model", state.available_models);
 }
 
 function populateSelect(id, items) {
     const sel = document.getElementById(id);
     if (sel.options.length > 1) return;
-    items.forEach(function(item) {
-        const opt = document.createElement("option");
-        opt.value = item;
-        opt.textContent = item;
-        sel.appendChild(opt);
-    });
-}
-
-function populateModelSelect(id, models) {
-    const sel = document.getElementById(id);
-    if (sel.options.length > 1) return;
-    Object.keys(models).forEach(function(key) {
+    Object.keys(items).forEach(function(key) {
         const opt = document.createElement("option");
         opt.value = key;
-        opt.textContent = models[key];
+        opt.textContent = items[key];
         sel.appendChild(opt);
     });
 }

@@ -57,8 +57,8 @@ export async function stopInference(model: string): Promise<ApiResponse> {
   );
 }
 
-export async function startTeleop(): Promise<ApiResponse> {
-  return request("POST", "teleop/start");
+export async function startTeleop(mode: string = "remote"): Promise<ApiResponse> {
+  return request("POST", `teleop/start?mode=${mode}`);
 }
 
 export async function stopTeleop(): Promise<ApiResponse> {

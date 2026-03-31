@@ -16,3 +16,35 @@ policy_repo_id = "data/outputs/pi0-pickup/final"
 dataset_repo_id = "jhimmens/linique-v2-pickup"
 task = "pickup"
 device = "cuda"
+
+[models.smolvla-napkin-fold]
+display_name = "SmolVLA Napkin Fold"
+policy_repo_id = "data/outputs/jhimmens_smolvla-napkin-fold"
+dataset_repo_id = "jhimmens/linique-v2"
+task = "full-fold-v1"
+device = "cuda"
+
+[models.smolvla-napkin-fold.rename_map]
+"observation.images.left_top_cam" = "observation.images.camera1"
+"observation.images.left_left_cam" = "observation.images.camera2"
+"observation.images.left_right_cam" = "observation.images.camera3"
+
+[rerun]
+enabled = true
+# Uncomment to stream to a remote Rerun viewer (e.g., on your laptop):
+# ip = "100.x.y.z"
+# port = 9876
+
+[recordings]
+best = "Best Fold"
+demo = "Demo"
+drunk = "Drunk Fold"
+drunk2 = "Drunk Fold 2"
+grid = "Grid Fold"
+linique_unfold_1 = "Linique Unfold 1"
+linique_unfold_2 = "Linique Unfold 2"
+linique_unfold_3 = "Linique Unfold 3"
+loop = "Loop"
+"side fold 1 (dawson)" = "Side Fold (Dawson)"
+v3 = "V3"
+waterfall_dawson = "Waterfall (Dawson)"

@@ -1,0 +1,36 @@
+# XVLA Fold-Pickup Inference Configuration
+
+[inference]
+# Trained policy to load
+policy_repo_id = "jhimmens/xvla-linique-v2-fold-pickup"
+
+# Dataset used for training (needed for feature definitions)
+dataset_repo_id = "jhimmens/linique-v2-fold-pickup"
+
+# Task description (should match training)
+task = "fold-pickup"
+
+# Device (cuda, mps, cpu)
+device = "cuda"
+
+# Control frequency
+fps = 30
+
+# Visualization
+display = true
+
+# XVLA uses flow-matching, not temporal ensembling
+# temporal_ensemble_coeff is intentionally omitted
+
+# Execute only first 15 of 32 predicted steps per chunk to reduce jerkiness
+n_action_steps = 15
+
+# Record inference data as a LeRobot dataset
+record = true
+
+# Remap robot camera names to match policy training camera names
+# (mapping from train_config.json rename_map)
+[inference.rename_map]
+"observation.images.left_top_cam" = "observation.images.image"
+"observation.images.left_left_cam" = "observation.images.image2"
+"observation.images.left_right_cam" = "observation.images.image3"

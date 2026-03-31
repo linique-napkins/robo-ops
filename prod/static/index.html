@@ -133,7 +133,11 @@
         </div>
 
         <div class="panel">
-            <h3>Remote Teleop</h3>
+            <h3>Teleop</h3>
+            <select id="sel-teleop-mode">
+                <option value="local">Local (Leader Arms)</option>
+                <option value="remote">Remote (WebSocket)</option>
+            </select>
             <button id="btn-teleop" class="btn" onclick="doStartTeleop()" disabled>Start</button>
             <button id="btn-teleop-stop" class="btn btn-danger" onclick="doStopTeleop()" disabled>Stop</button>
         </div>
