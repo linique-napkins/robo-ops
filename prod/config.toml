@@ -30,14 +30,15 @@ device = "cuda"
 "observation.images.left_right_cam" = "observation.images.camera3"
 
 [rerun]
-enabled = true
-# Uncomment to stream to a remote Rerun viewer (e.g., on your laptop):
+enabled = false
+# Set enabled = true and configure ip/port to stream to a remote Rerun viewer:
 # ip = "100.x.y.z"
 # port = 9876
 
 [recordings]
 best = "Best Fold"
 demo = "Demo"
+demofold = "GOOD"
 drunk = "Drunk Fold"
 drunk2 = "Drunk Fold 2"
 grid = "Grid Fold"

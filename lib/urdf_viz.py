@@ -593,6 +593,7 @@ def init_rerun_with_urdf(
     left_rotation_deg: float = 0.0,
     right_rotation_deg: float = 0.0,
     camera_names: list[str] | None = None,
+    save_to_file: bool = True,
 ) -> BimanualURDFVisualizer | None:
     """Initialize Rerun with URDF visualization for bimanual robot arms.
 
@@ -607,6 +608,7 @@ def init_rerun_with_urdf(
         right_rotation_deg: Rotation around Z axis for right arm (degrees).
         camera_names: List of camera names (e.g., ["top", "left", "right"]) for image views.
                      If None, defaults to ["top", "left", "right"].
+        save_to_file: Whether to save a .rrd file. Set False for long-running servers.
 
     Returns:
         BimanualURDFVisualizer instance or None if initialization failed.
@@ -619,23 +621,27 @@ def init_rerun_with_urdf(
     batch_size = os.getenv("RERUN_FLUSH_NUM_BYTES", "8000")
     os.environ["RERUN_FLUSH_NUM_BYTES"] = batch_size
 
-    # Generate .rrd path for saving
-    _global_rrd_path = get_rrd_path(session_name)
+    # Generate .rrd path for saving (if file recording enabled)
+    _global_rrd_path = get_rrd_path(session_name) if save_to_file else None
 
     # Use recording_id so multiple sessions show up in the same viewer
-    rr.init(session_name, recording_id=str(_global_rrd_path.stem))
+    recording_id = str(_global_rrd_path.stem) if _global_rrd_path else session_name
+    rr.init(session_name, recording_id=recording_id)
 
     memory_limit = os.getenv("LEROBOT_RERUN_MEMORY_LIMIT", "10%")
 
-    # Set up dual sinks: file + viewer. spawn(connect=False) launches the viewer
-    # without replacing the recording sink, then set_sinks() attaches both.
+    # Set up sinks: gRPC for live viewing, optional FileSink for recording.
+    # spawn(connect=False) launches the viewer without replacing the recording sink.
     if ip and port:
         grpc_sink = rr.GrpcSink(url=f"rerun+http://{ip}:{port}/proxy")
     else:
         rr.spawn(connect=False, memory_limit=memory_limit)
         grpc_sink = rr.GrpcSink()
 
-    rr.set_sinks(rr.FileSink(str(_global_rrd_path)), grpc_sink)
+    sinks = [grpc_sink]
+    if _global_rrd_path:
+        sinks.insert(0, rr.FileSink(str(_global_rrd_path)))
+    rr.set_sinks(*sinks)
 
     rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
 

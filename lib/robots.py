@@ -6,6 +6,7 @@ Calibration files are stored in the repo at calibration/{role}/.
 """
 
 from lerobot.cameras import CameraConfig
+from lerobot.cameras.configs import Cv2Backends
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
 from lerobot.cameras.realsense.configuration_realsense import RealSenseCameraConfig
 from lerobot.robots.bi_so_follower import BiSOFollower
@@ -40,6 +41,7 @@ def build_camera_configs(cameras_cfg: dict) -> dict[str, CameraConfig]:
                 width=cam["width"],
                 height=cam["height"],
                 fourcc=cam.get("fourcc"),
+                backend=Cv2Backends.V4L2,
             )
     return configs
 

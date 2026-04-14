@@ -23,7 +23,6 @@ from lib.stow import stow
 from lib.stow import stow_and_disconnect
 from lib.urdf_viz import init_rerun_with_urdf
 from lib.urdf_viz import log_observation_and_action
-from lib.urdf_viz import save_rrd
 from utils.find_cameras import configure_exposure
 
 
@@ -118,26 +117,31 @@ class RobotManager:
             self.robot = None
             raise
 
-        # Initialize Rerun visualization if enabled
-        if self._rerun_cfg.get("enabled"):
+        # Initialize Rerun visualization if enabled (requires remote viewer ip/port)
+        rerun_ip = self._rerun_cfg.get("ip")
+        rerun_port = self._rerun_cfg.get("port")
+        if self._rerun_cfg.get("enabled") and rerun_ip and rerun_port:
             try:
                 urdf_cfg = get_urdf_config(self._config)
                 self._visualizer = init_rerun_with_urdf(
                     session_name="prod",
-                    ip=self._rerun_cfg.get("ip"),
-                    port=self._rerun_cfg.get("port"),
+                    ip=rerun_ip,
+                    port=rerun_port,
                     urdf_path=urdf_cfg["path"],
                     left_offset=urdf_cfg["left_offset"],
                     right_offset=urdf_cfg["right_offset"],
                     left_rotation_deg=urdf_cfg["left_rotation"],
                     right_rotation_deg=urdf_cfg["right_rotation"],
                     camera_names=list(self._cameras_cfg.keys()),
+                    save_to_file=False,
                 )
                 if self._visualizer:
-                    print("Rerun visualization initialized")
+                    print(f"Rerun streaming to {rerun_ip}:{rerun_port}")
             except Exception as e:
                 print(f"Rerun initialization failed (continuing without): {e}")
                 self._visualizer = None
+        elif self._rerun_cfg.get("enabled"):
+            print("Rerun enabled but no ip/port set — skipping (local viewer not safe for servers)")
 
         self._start_control_thread()
         self._set_state(State.IDLE)
@@ -155,14 +159,7 @@ class RobotManager:
         if self.robot and self.robot.is_connected:
             stow_and_disconnect(self.robot)
 
-        # Save Rerun recording
         if self._visualizer:
-            try:
-                rrd_path = save_rrd()
-                if rrd_path:
-                    print(f"Rerun recording saved to: {rrd_path}")
-            except Exception as e:
-                print(f"Failed to save Rerun recording: {e}")
             self._visualizer = None
 
         self.robot = None
@@ -234,6 +231,7 @@ class RobotManager:
         - JPEG-encode camera frames -> write to shared frame buffer
         """
         fps = 30
+        consecutive_errors = 0
         while self._running:
             loop_start = time.perf_counter()
             try:
@@ -254,8 +252,14 @@ class RobotManager:
                 if self._visualizer:
                     log_observation_and_action(self._visualizer, obs, action, use_degrees=True)
 
+                consecutive_errors = 0
+
             except Exception as e:
-                print(f"Control loop error: {e}")
+                consecutive_errors += 1
+                if consecutive_errors == 1:
+                    print(f"Control loop error: {e}")
+                elif consecutive_errors == 30:
+                    print(f"Control loop error persisting ({consecutive_errors} consecutive): {e}")
 
             dt = time.perf_counter() - loop_start
             precise_sleep(max(1 / fps - dt, 0.0))

@@ -304,9 +304,6 @@ def main(  # noqa: PLR0912
         t_policy = TimerManager("policy", log=False)
         t_action = TimerManager("action", log=False)
 
-        dt = 1.0 / fps
-        next_tick = time.perf_counter() + dt
-        last_log_time = time.perf_counter()
 
         encoding_ctx = (
             VideoEncodingManager(rec_dataset) if rec_dataset else contextlib.nullcontext()
@@ -366,17 +363,14 @@ def main(  # noqa: PLR0912
 
                 step += 1
 
-                # Sync to exact target FPS using wall-clock schedule
+                # Maintain target FPS
                 t_loop.stop()
-                now = time.perf_counter()
-                precise_sleep(max(next_tick - now, 0.0))
-                next_tick += dt
+                sleep_time = max(1.0 / fps - t_loop.last, 0.0)
+                precise_sleep(sleep_time)
 
                 # Log control rate every second
                 if step % fps == 0:
-                    log_now = time.perf_counter()
-                    actual_hz = fps / (log_now - last_log_time)
-                    last_log_time = log_now
+                    actual_hz = t_loop.fps_avg
                     elapsed = time.time() - start_time
                     typer.echo(
                         f"  {elapsed:5.1f}s | {step} steps | "
